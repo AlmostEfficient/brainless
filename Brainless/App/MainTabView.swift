@@ -12,13 +12,13 @@ struct MainTabView: View {
                 equipmentProfileStore: equipmentProfileStore,
                 historyService: historyService
             )
-                .tabItem {
-                    Label("Home", systemImage: "house")
-                }
+            .tabItem {
+                Label("Today", systemImage: "house.fill")
+            }
 
             HistoryListView(historyService: historyService)
                 .tabItem {
-                    Label("History", systemImage: "clock.arrow.circlepath")
+                    Label("History", systemImage: "clock.fill")
                 }
 
             SettingsView(
@@ -27,7 +27,7 @@ struct MainTabView: View {
                 equipmentProfileStore: equipmentProfileStore
             )
             .tabItem {
-                Label("Settings", systemImage: "gearshape")
+                Label("Settings", systemImage: "gearshape.fill")
             }
         }
     }

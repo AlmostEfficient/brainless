@@ -3,10 +3,15 @@
 //  Brainless
 //
 
+import SwiftData
 import SwiftUI
 
 struct SettingsView: View {
     @State private var viewModel: SettingsViewModel
+    #if DEBUG
+    @Environment(\.modelContext) private var modelContext
+    @State private var showingResetConfirmation = false
+    #endif
 
     init(viewModel: SettingsViewModel) {
         _viewModel = State(initialValue: viewModel)
@@ -35,49 +40,20 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Body context") {
-                    ProfileTextField(title: "Relevant body notes", text: $viewModel.bodyContext.bodyNotes, prompt: "Weak joints, imbalances, recurring tightness")
-                    ProfileTextField(title: "Joint concerns", text: $viewModel.bodyContext.jointConcerns, prompt: "Knees, shoulders, wrists, lower back")
-                    ProfileTextField(title: "Posture and mobility", text: $viewModel.bodyContext.postureAndMobility, prompt: "Nerd neck, tight hips, pelvic tilt")
-                    ProfileTextField(title: "Health or physio notes", text: $viewModel.bodyContext.healthNotes, prompt: "Optional summaries")
-                }
-
-                Section("Training preferences") {
-                    ProfileTextField(title: "Primary goals", text: $viewModel.trainingPreferences.primaryGoals, prompt: "Strength, hypertrophy, mobility")
-                    ProfileTextField(title: "Training style", text: $viewModel.trainingPreferences.trainingStyle, prompt: "Push/pull/legs, full body")
-                    ProfileTextField(title: "Session length", text: $viewModel.trainingPreferences.sessionLength, prompt: "45 minutes")
-                    ProfileTextField(title: "Weekly frequency", text: $viewModel.trainingPreferences.weeklyFrequency, prompt: "3 days per week")
-                    ProfileTextField(title: "Intensity preference", text: $viewModel.trainingPreferences.intensityPreference, prompt: "Moderate, joint-friendly")
-                    ProfileTextField(title: "Additional notes", text: $viewModel.trainingPreferences.additionalNotes, prompt: "Exercises to prioritize or avoid")
-                }
-
-                Section("Equipment") {
-                    ProfileTextField(title: "Training location", text: $viewModel.equipmentProfile.trainingLocation, prompt: "Home, commercial gym")
-                    ProfileTextField(title: "Available equipment", text: $viewModel.equipmentProfile.availableEquipment, prompt: "Dumbbells, bench, bands")
-                    ProfileTextField(title: "Missing equipment", text: $viewModel.equipmentProfile.missingEquipment, prompt: "No barbell, no squat rack")
-                    ProfileTextField(title: "Additional notes", text: $viewModel.equipmentProfile.additionalNotes, prompt: "Space or noise constraints")
-                }
-
-                Section("API and assets") {
-                    TextField("Backend base URL", text: $viewModel.backendBaseURL)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-
-                    TextField("Assets base URL", text: $viewModel.assetsBaseURL)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-
-                    SecureField("API token", text: $viewModel.apiToken)
-                        .textInputAutocapitalization(.never)
-                }
+                bodyContextSection
+                goalsSection
+                trainingSection
+                equipmentSection
+                apiSection
+                #if DEBUG
+                debugSection
+                #endif
             }
             .navigationTitle("Settings")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
-                        Task {
-                            await viewModel.save()
-                        }
+                        Task { await viewModel.save() }
                     } label: {
                         if viewModel.isSaving {
                             ProgressView()
@@ -88,9 +64,7 @@ struct SettingsView: View {
                     .disabled(!viewModel.canSave || viewModel.isSaving)
                 }
             }
-            .task {
-                await viewModel.load()
-            }
+            .task { await viewModel.load() }
             .alert("Settings error", isPresented: $viewModel.showsError) {
                 Button("OK", role: .cancel) { }
             } message: {
@@ -98,7 +72,150 @@ struct SettingsView: View {
             }
         }
     }
+
+    private var bodyContextSection: some View {
+        Section("Body context") {
+            TextField(
+                "Injuries, joint concerns, posture, limits (optional)",
+                text: $viewModel.bodyContext.bodyNotes,
+                axis: .vertical
+            )
+            .lineLimit(3...6)
+
+            Picker("Safety approach", selection: $viewModel.bodyContext.safetyPreference) {
+                Text("Standard").tag(SafetyPreference.standard)
+                Text("Conservative").tag(SafetyPreference.conservative)
+                Text("Very conservative").tag(SafetyPreference.veryConservative)
+            }
+        }
+    }
+
+    private var goalsSection: some View {
+        Section("Goals") {
+            FlowLayout(spacing: 8) {
+                ForEach(FitnessGoal.allCases) { goal in
+                    SelectionChip(
+                        label: goal.displayName,
+                        isSelected: viewModel.trainingPreferences.goals.contains(goal)
+                    ) {
+                        viewModel.trainingPreferences.goals =
+                            viewModel.trainingPreferences.goals.symmetricDifference([goal])
+                    }
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+        }
+    }
+
+    private var trainingSection: some View {
+        Section("Training") {
+            Picker("Experience", selection: $viewModel.trainingPreferences.experience) {
+                ForEach(TrainingExperience.allCases) { exp in
+                    Text(exp.displayName).tag(exp)
+                }
+            }
+
+            Picker("Split", selection: $viewModel.trainingPreferences.preferredSplit) {
+                ForEach(WorkoutSplit.allCases) { split in
+                    Text(split.displayName).tag(split)
+                }
+            }
+
+            InlineStepperView(
+                label: "Days per week",
+                value: $viewModel.trainingPreferences.workoutsPerWeek,
+                range: 2...7
+            )
+
+            Picker("Session length", selection: $viewModel.trainingPreferences.sessionLengthMinutes) {
+                Text("30 min").tag(30)
+                Text("45 min").tag(45)
+                Text("60 min").tag(60)
+                Text("90 min").tag(90)
+            }
+
+            Picker("Intensity", selection: $viewModel.trainingPreferences.intensity) {
+                ForEach(WorkoutIntensity.allCases) { intensity in
+                    Text(intensity.displayName).tag(intensity)
+                }
+            }
+
+            TextField("Additional notes (optional)", text: $viewModel.trainingPreferences.additionalNotes, axis: .vertical)
+                .lineLimit(2...4)
+        }
+    }
+
+    private var equipmentSection: some View {
+        Section("Equipment") {
+            Picker("Location", selection: $viewModel.equipmentProfile.location) {
+                Text("Not set").tag(Optional<TrainingLocation>.none)
+                ForEach(TrainingLocation.allCases) { loc in
+                    Text(loc.rawValue).tag(Optional(loc))
+                }
+            }
+
+            FlowLayout(spacing: 8) {
+                ForEach(EquipmentType.allCases) { type in
+                    SelectionChip(
+                        label: type.displayName,
+                        isSelected: viewModel.equipmentProfile.equipment.contains(type)
+                    ) {
+                        viewModel.equipmentProfile.equipment =
+                            viewModel.equipmentProfile.equipment.symmetricDifference([type])
+                    }
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+
+            TextField("Any constraints? (optional)", text: $viewModel.equipmentProfile.additionalNotes, axis: .vertical)
+                .lineLimit(2...4)
+        }
+    }
+
+    private var apiSection: some View {
+        Section("API and assets") {
+            TextField("Backend base URL", text: $viewModel.backendBaseURL)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+
+            TextField("Assets base URL", text: $viewModel.assetsBaseURL)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+
+            SecureField("API token", text: $viewModel.apiToken)
+                .textInputAutocapitalization(.never)
+        }
+    }
+
+    #if DEBUG
+    private var debugSection: some View {
+        Section("Debug") {
+            Button("Reset app data", role: .destructive) {
+                showingResetConfirmation = true
+            }
+        }
+        .alert("Reset app data?", isPresented: $showingResetConfirmation) {
+            Button("Reset", role: .destructive, action: resetAllData)
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Deletes all profiles, history, and settings. You'll see onboarding again.")
+        }
+    }
+
+    private func resetAllData() {
+        try? modelContext.delete(model: AppSettingsRecord.self)
+        try? modelContext.delete(model: UserProfileRecord.self)
+        try? modelContext.delete(model: TrainingPreferencesRecord.self)
+        try? modelContext.delete(model: EquipmentProfileRecord.self)
+        try? modelContext.delete(model: WorkoutSessionRecord.self)
+        try? modelContext.save()
+    }
+    #endif
 }
+
+// MARK: - ViewModel
 
 @Observable
 final class SettingsViewModel {
@@ -157,7 +274,6 @@ final class SettingsViewModel {
         guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
-
         do {
             let snapshot = try await loadSettings()
             bodyContext = snapshot.bodyContext
@@ -175,7 +291,6 @@ final class SettingsViewModel {
         guard canSave, !isSaving else { return }
         isSaving = true
         defer { isSaving = false }
-
         do {
             try await saveSettings(currentSnapshot)
         } catch {

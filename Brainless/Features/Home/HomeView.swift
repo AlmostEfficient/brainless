@@ -76,20 +76,12 @@ struct HomeView: View {
 
             FlowLayout(spacing: 8) {
                 ForEach(viewModel.intentOptions, id: \.self) { intent in
-                    Button {
+                    SelectionChip(
+                        label: intent,
+                        isSelected: viewModel.selectedIntent == intent
+                    ) {
                         viewModel.selectedIntent = intent
-                    } label: {
-                        Text(intent)
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .foregroundStyle(viewModel.selectedIntent == intent ? .white : .primary)
-                            .background(
-                                viewModel.selectedIntent == intent ? Color.accentColor : Color(.secondarySystemGroupedBackground),
-                                in: Capsule()
-                            )
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }

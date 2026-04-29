@@ -28,7 +28,7 @@ struct HistoryListView: View {
                             HistoryRow(session: session)
                         }
                     }
-                    .listStyle(.plain)
+                    .listStyle(.insetGrouped)
                 }
             }
             .navigationTitle("History")
@@ -63,7 +63,13 @@ private struct HistoryRow: View {
                 Spacer()
                 Text(session.status.displayName)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(session.status == .completed ? .green : .orange)
+                    .foregroundStyle(session.status == .completed ? Color.green : Color.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        (session.status == .completed ? Color.green : Color.orange).opacity(0.12),
+                        in: Capsule()
+                    )
             }
 
             HStack(spacing: 12) {

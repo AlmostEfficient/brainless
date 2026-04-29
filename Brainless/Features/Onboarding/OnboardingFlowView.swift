@@ -1,5 +1,5 @@
 //
-//  OnboardingView.swift
+//  OnboardingFlowView.swift
 //  Brainless
 //
 
@@ -44,8 +44,14 @@ struct OnboardingFlowView: View {
                     EquipmentProfileStepView(draft: $viewModel.equipmentProfile)
                         .tag(OnboardingStep.equipment)
 
-                    CompletionStepView(isSaving: viewModel.isSaving)
-                        .tag(OnboardingStep.completion)
+                    CompletionStepView(
+                        isSaving: viewModel.isSaving,
+                        goals: viewModel.trainingPreferences.goals,
+                        split: viewModel.trainingPreferences.preferredSplit,
+                        location: viewModel.equipmentProfile.location,
+                        safety: viewModel.bodyContext.safetyPreference
+                    )
+                    .tag(OnboardingStep.completion)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
 
@@ -55,14 +61,12 @@ struct OnboardingFlowView: View {
                     isSaving: viewModel.isSaving,
                     backAction: viewModel.goBack,
                     nextAction: {
-                        Task {
-                            await viewModel.advance()
-                        }
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        Task { await viewModel.advance() }
                     }
                 )
             }
-            .navigationTitle("Set up profile")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             .alert("Could not save profile", isPresented: $viewModel.showsSaveError) {
                 Button("OK", role: .cancel) { }
             } message: {
@@ -71,6 +75,8 @@ struct OnboardingFlowView: View {
         }
     }
 }
+
+// MARK: - ViewModel
 
 @Observable
 final class OnboardingViewModel {
@@ -109,16 +115,11 @@ final class OnboardingViewModel {
 
     var canContinue: Bool {
         switch step {
-        case .intro:
-            true
-        case .bodyContext:
-            bodyContext.isComplete
-        case .trainingPreferences:
-            trainingPreferences.isComplete
-        case .equipment:
-            equipmentProfile.isComplete
-        case .completion:
-            !isSaving
+        case .intro:              true
+        case .bodyContext:        bodyContext.isComplete
+        case .trainingPreferences: trainingPreferences.isComplete
+        case .equipment:          equipmentProfile.isComplete
+        case .completion:         !isSaving
         }
     }
 
@@ -129,12 +130,10 @@ final class OnboardingViewModel {
 
     func advance() async {
         guard canContinue, !isSaving else { return }
-
         if step == .completion {
             await complete()
             return
         }
-
         if let nextStep = step.next {
             step = nextStep
         }
@@ -143,7 +142,6 @@ final class OnboardingViewModel {
     private func complete() async {
         isSaving = true
         defer { isSaving = false }
-
         do {
             try await saveProfile(bodyContext, trainingPreferences, equipmentProfile)
             onCompleted()
@@ -154,6 +152,8 @@ final class OnboardingViewModel {
     }
 }
 
+// MARK: - Step Enum
+
 enum OnboardingStep: Int, CaseIterable {
     case intro
     case bodyContext
@@ -161,35 +161,31 @@ enum OnboardingStep: Int, CaseIterable {
     case equipment
     case completion
 
-    var previous: OnboardingStep? {
-        Self(rawValue: rawValue - 1)
-    }
-
-    var next: OnboardingStep? {
-        Self(rawValue: rawValue + 1)
-    }
+    var previous: OnboardingStep? { Self(rawValue: rawValue - 1) }
+    var next: OnboardingStep? { Self(rawValue: rawValue + 1) }
 
     var primaryActionTitle: String {
         switch self {
-        case .completion:
-            "Save"
-        default:
-            "Continue"
+        case .completion: "Let's go"
+        default:          "Continue"
         }
     }
 }
 
+// MARK: - Step Views
+
 private struct IntroStepView: View {
     var body: some View {
-        ProfileFormPage(title: "Tell Brainless what matters") {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Your long-term body context, goals, and equipment constraints help shape each generated workout.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
+        ProfileFormPage(title: "Built for the\nway you train.") {
+            Text("Tell Brainless about your body, goals, and gear once. It generates every workout for you.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 8)
 
-                Text("Brainless is not medical advice. Use your judgment, avoid movements that feel unsafe, and follow guidance from qualified clinicians when you have pain, injuries, or medical conditions.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 16) {
+                FeatureBullet(systemImage: "figure.strengthtraining.traditional", text: "Workouts matched to your body")
+                FeatureBullet(systemImage: "slider.horizontal.3", text: "Your equipment, your constraints")
+                FeatureBullet(systemImage: "sparkles", text: "AI handles the programming")
             }
         }
     }
@@ -199,11 +195,28 @@ private struct BodyContextStepView: View {
     @Binding var draft: BodyContextDraft
 
     var body: some View {
-        ProfileFormPage(title: "Body context") {
-            ProfileTextField(title: "Relevant body notes", text: $draft.bodyNotes, prompt: "Weak joints, imbalances, recurring tightness, pain triggers")
-            ProfileTextField(title: "Joint concerns", text: $draft.jointConcerns, prompt: "Knees, shoulders, wrists, lower back")
-            ProfileTextField(title: "Posture and mobility", text: $draft.postureAndMobility, prompt: "Nerd neck, tight hips, pelvic tilt, ankle mobility")
-            ProfileTextField(title: "Health or physio notes", text: $draft.healthNotes, prompt: "Optional summaries you want workouts to respect")
+        ProfileFormPage(title: "Your body.") {
+            Text("Optional. Anything Brainless should work around.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            TextField(
+                "Injuries, joint concerns, posture, limits",
+                text: $draft.bodyNotes,
+                axis: .vertical
+            )
+            .lineLimit(4...8)
+            .padding(14)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+
+            FormSectionLabel("Safety approach")
+
+            Picker("Safety approach", selection: $draft.safetyPreference) {
+                Text("Standard").tag(SafetyPreference.standard)
+                Text("Conservative").tag(SafetyPreference.conservative)
+                Text("Very conservative").tag(SafetyPreference.veryConservative)
+            }
+            .pickerStyle(.segmented)
         }
     }
 }
@@ -212,13 +225,54 @@ private struct TrainingPreferencesStepView: View {
     @Binding var draft: TrainingPreferencesDraft
 
     var body: some View {
-        ProfileFormPage(title: "Training preferences") {
-            ProfileTextField(title: "Primary goals", text: $draft.primaryGoals, prompt: "Strength, hypertrophy, mobility, corrective work")
-            ProfileTextField(title: "Training style", text: $draft.trainingStyle, prompt: "Push/pull/legs, full body, athletic, bodybuilding")
-            ProfileTextField(title: "Session length", text: $draft.sessionLength, prompt: "30 minutes, 45 minutes, under an hour")
-            ProfileTextField(title: "Weekly frequency", text: $draft.weeklyFrequency, prompt: "3 days per week, weekdays only")
-            ProfileTextField(title: "Intensity preference", text: $draft.intensityPreference, prompt: "Moderate, hard but joint-friendly, low impact")
-            ProfileTextField(title: "Additional notes", text: $draft.additionalNotes, prompt: "Exercises you like, avoid, or want prioritized")
+        ProfileFormPage(title: "Your training.") {
+            FormSectionLabel("What are you training for?")
+            FlowLayout(spacing: 8) {
+                ForEach(FitnessGoal.allCases) { goal in
+                    SelectionChip(
+                        label: goal.displayName,
+                        isSelected: draft.goals.contains(goal)
+                    ) {
+                        draft.goals = draft.goals.symmetricDifference([goal])
+                    }
+                }
+            }
+
+            FormSectionLabel("Experience level")
+            Picker("Experience", selection: $draft.experience) {
+                ForEach(TrainingExperience.allCases) { exp in
+                    Text(exp.displayName).tag(exp)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            FormSectionLabel("Preferred split")
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                ForEach(WorkoutSplit.allCases) { split in
+                    SplitCard(split: split, isSelected: draft.preferredSplit == split) {
+                        draft.preferredSplit = split
+                    }
+                }
+            }
+
+            InlineStepperView(label: "Days per week", value: $draft.workoutsPerWeek, range: 2...7)
+
+            FormSectionLabel("Session length")
+            Picker("Session length", selection: $draft.sessionLengthMinutes) {
+                Text("30 min").tag(30)
+                Text("45 min").tag(45)
+                Text("60 min").tag(60)
+                Text("90 min").tag(90)
+            }
+            .pickerStyle(.segmented)
+
+            FormSectionLabel("Intensity")
+            Picker("Intensity", selection: $draft.intensity) {
+                ForEach(WorkoutIntensity.allCases) { intensity in
+                    Text(intensity.displayName).tag(intensity)
+                }
+            }
+            .pickerStyle(.segmented)
         }
     }
 }
@@ -227,31 +281,77 @@ private struct EquipmentProfileStepView: View {
     @Binding var draft: EquipmentProfileDraft
 
     var body: some View {
-        ProfileFormPage(title: "Equipment") {
-            ProfileTextField(title: "Training location", text: $draft.trainingLocation, prompt: "Home, commercial gym, apartment gym")
-            ProfileTextField(title: "Available equipment", text: $draft.availableEquipment, prompt: "Dumbbells, cable machine, bench, bands")
-            ProfileTextField(title: "Missing equipment", text: $draft.missingEquipment, prompt: "No barbell, no squat rack, no pull-up bar")
-            ProfileTextField(title: "Additional notes", text: $draft.additionalNotes, prompt: "Space limits, noisy movements to avoid")
+        ProfileFormPage(title: "Your gear.") {
+            FormSectionLabel("Where do you train?")
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                ForEach(TrainingLocation.allCases) { location in
+                    LocationCard(location: location, isSelected: draft.location == location) {
+                        draft.location = draft.location == location ? nil : location
+                    }
+                }
+            }
+
+            FormSectionLabel("What do you have?")
+            FlowLayout(spacing: 8) {
+                ForEach(EquipmentType.allCases) { type in
+                    SelectionChip(
+                        label: type.displayName,
+                        isSelected: draft.equipment.contains(type)
+                    ) {
+                        draft.equipment = draft.equipment.symmetricDifference([type])
+                    }
+                }
+            }
+
+            TextField("Any constraints? (optional)", text: $draft.additionalNotes, axis: .vertical)
+                .lineLimit(2...4)
+                .padding(14)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
         }
     }
 }
 
 private struct CompletionStepView: View {
     let isSaving: Bool
+    let goals: Set<FitnessGoal>
+    let split: WorkoutSplit
+    let location: TrainingLocation?
+    let safety: SafetyPreference
 
     var body: some View {
-        ProfileFormPage(title: "Ready to train") {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Save this profile to personalize generated workouts and keep future settings editable.")
-                    .foregroundStyle(.secondary)
+        ProfileFormPage(title: "You're set.") {
+            Text("Brainless is ready to build workouts around you.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 8)
 
-                if isSaving {
-                    ProgressView("Saving")
+            if isSaving {
+                ProgressView("Saving")
+                    .padding(.top, 8)
+            } else {
+                let goalsText = FitnessGoal.allCases
+                    .filter { goals.contains($0) }
+                    .map(\.displayName)
+                    .joined(separator: ", ")
+
+                VStack(spacing: 8) {
+                    SummaryRow(label: "Goals", value: goalsText.isEmpty ? "—" : goalsText)
+                    if split != .fullBody {
+                        SummaryRow(label: "Split", value: split.displayName)
+                    }
+                    if let location {
+                        SummaryRow(label: "Location", value: location.rawValue)
+                    }
+                    if safety != .standard {
+                        SummaryRow(label: "Safety", value: safety.displayName)
+                    }
                 }
             }
         }
     }
 }
+
+// MARK: - Shared Step Components
 
 struct ProfileFormPage<Content: View>: View {
     let title: String
@@ -262,31 +362,125 @@ struct ProfileFormPage<Content: View>: View {
             VStack(alignment: .leading, spacing: 24) {
                 Text(title)
                     .font(.largeTitle.bold())
-                    .padding(.top, 24)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 32)
 
                 content
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 24)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 32)
+        }
+        .scrollDismissesKeyboard(.interactively)
+    }
+}
+
+private struct FormSectionLabel: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.top, 4)
+    }
+}
+
+private struct FeatureBullet: View {
+    let systemImage: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 28, alignment: .center)
+            Text(text)
+                .font(.body)
         }
     }
 }
 
-struct ProfileTextField: View {
-    let title: String
-    @Binding var text: String
-    let prompt: String
+private struct SplitCard: View {
+    let split: WorkoutSplit
+    let isSelected: Bool
+    let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.headline)
-
-            TextField(prompt, text: $text, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(3...6)
+        Button(action: action) {
+            Text(split.displayName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isSelected ? Color.accentColor.opacity(0.1) : Color(.secondarySystemGroupedBackground))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
+                )
         }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.15), value: isSelected)
+    }
+}
+
+private struct LocationCard: View {
+    let location: TrainingLocation
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: location.systemImage)
+                    .font(.title2)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                Text(location.rawValue)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, minHeight: 80)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? Color.accentColor.opacity(0.1) : Color(.secondarySystemGroupedBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.15), value: isSelected)
+    }
+}
+
+private struct SummaryRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -298,20 +492,46 @@ private struct OnboardingFooter: View {
     let nextAction: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            ProgressView(value: Double(step.rawValue + 1), total: Double(OnboardingStep.allCases.count))
+        VStack(spacing: 20) {
+            HStack(spacing: 6) {
+                ForEach(OnboardingStep.allCases, id: \.self) { s in
+                    Circle()
+                        .fill(s == step ? Color.accentColor : Color(.tertiaryLabel))
+                        .frame(width: s == step ? 8 : 6, height: s == step ? 8 : 6)
+                        .animation(.spring(response: 0.3), value: step)
+                }
+            }
 
             HStack(spacing: 12) {
-                Button("Back", action: backAction)
-                    .buttonStyle(.bordered)
-                    .disabled(step.previous == nil || isSaving)
+                if step.previous != nil {
+                    Button("Back", action: backAction)
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .disabled(isSaving)
+                }
 
-                Button(step.primaryActionTitle, action: nextAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!canContinue || isSaving)
+                Button {
+                    nextAction()
+                } label: {
+                    Group {
+                        if isSaving {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Text(step.primaryActionTitle)
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!canContinue || isSaving)
             }
         }
-        .padding(20)
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 24)
         .background(.bar)
     }
 }

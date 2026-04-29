@@ -67,6 +67,7 @@ struct WorkoutModeView: View {
                 }
             )
             .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -386,9 +387,6 @@ private struct FinishWorkoutSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Finish workout")
-                    .font(.title.bold())
-
                 Text("\(loggedSetCount) logged sets • \(skippedCount) skipped")
                     .foregroundStyle(.secondary)
 
@@ -416,6 +414,8 @@ private struct FinishWorkoutSheet: View {
                 Spacer()
             }
             .padding(20)
+            .navigationTitle("Finish")
+            .navigationBarTitleDisplayMode(.large)
         }
     }
 }
