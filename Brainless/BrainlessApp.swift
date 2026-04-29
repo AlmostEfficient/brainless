@@ -10,9 +10,29 @@ import SwiftData
 
 @main
 struct BrainlessApp: App {
-    var sharedModelContainer: ModelContainer = {
+    private let container: AppContainer
+
+    init() {
+        container = AppContainer()
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            RootView()
+                .environment(\.appDependencies, container.dependencies)
+        }
+        .modelContainer(container.modelContainer)
+    }
+}
+
+extension BrainlessApp {
+    nonisolated static func makeModelContainer() -> ModelContainer {
         let schema = Schema([
-            Item.self,
+            AppSettingsRecord.self,
+            UserProfileRecord.self,
+            TrainingPreferencesRecord.self,
+            EquipmentProfileRecord.self,
+            WorkoutSessionRecord.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -21,12 +41,5 @@ struct BrainlessApp: App {
         } catch {
             fatalError("Could not create ModelContainer: \(error)")
         }
-    }()
-
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-        .modelContainer(sharedModelContainer)
     }
 }
