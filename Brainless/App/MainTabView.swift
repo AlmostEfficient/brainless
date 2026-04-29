@@ -66,11 +66,7 @@ struct MainTabView: View {
     }
 
     private var workoutGenerationService: WorkoutGenerationService {
-        if appSettings.useRemoteWorkoutGeneration {
-            RemoteWorkoutGenerationService(apiClient: apiClient)
-        } else {
-            UnavailableWorkoutGenerationService()
-        }
+        RemoteWorkoutGenerationService(apiClient: apiClient)
     }
 
     private var exerciseCatalogService: ExerciseCatalogService {
@@ -91,8 +87,7 @@ struct MainTabView: View {
             equipmentProfile: EquipmentProfileDraft(equipmentProfile: try equipmentProfileStore.loadEquipmentProfile()),
             backendBaseURL: settings.backendBaseURL,
             assetsBaseURL: settings.assetsBaseURL,
-            apiToken: settings.apiToken,
-            useRemoteWorkoutGeneration: settings.useRemoteWorkoutGeneration
+            apiToken: settings.apiToken
         )
     }
 
@@ -105,7 +100,7 @@ struct MainTabView: View {
         settings.backendBaseURL = snapshot.backendBaseURL
         settings.assetsBaseURL = snapshot.assetsBaseURL
         settings.apiToken = snapshot.apiToken
-        settings.useRemoteWorkoutGeneration = snapshot.useRemoteWorkoutGeneration
+        settings.useRemoteWorkoutGeneration = true
 
         let record = settingsRecords.first ?? AppSettingsRecord()
         record.jsonData = try dependencies.appStateStore.makeSettingsData(settings)

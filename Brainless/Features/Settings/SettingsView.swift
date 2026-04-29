@@ -23,8 +23,7 @@ struct SettingsView: View {
         equipmentProfileStore: EquipmentProfileStore,
         backendBaseURL: String = "https://nexus.raza.run/v1",
         assetsBaseURL: String = "https://assets.raza.run",
-        apiToken: String = "",
-        useRemoteWorkoutGeneration: Bool = true
+        apiToken: String = ""
     ) {
         self.init(
             viewModel: SettingsViewModel(
@@ -33,8 +32,7 @@ struct SettingsView: View {
                 equipmentProfileStore: equipmentProfileStore,
                 backendBaseURL: backendBaseURL,
                 assetsBaseURL: assetsBaseURL,
-                apiToken: apiToken,
-                useRemoteWorkoutGeneration: useRemoteWorkoutGeneration
+                apiToken: apiToken
             )
         )
     }
@@ -175,8 +173,6 @@ struct SettingsView: View {
 
             SecureField("API token", text: $viewModel.apiToken)
                 .textInputAutocapitalization(.never)
-
-            Toggle("Remote workout generation", isOn: $viewModel.useRemoteWorkoutGeneration)
         }
     }
 
@@ -216,7 +212,6 @@ final class SettingsViewModel {
     var backendBaseURL = "https://nexus.raza.run/v1"
     var assetsBaseURL = "https://assets.raza.run"
     var apiToken = ""
-    var useRemoteWorkoutGeneration = true
     var isLoading = false
     var isSaving = false
     var showsError = false
@@ -239,8 +234,7 @@ final class SettingsViewModel {
         equipmentProfileStore: EquipmentProfileStore,
         backendBaseURL: String = "https://nexus.raza.run/v1",
         assetsBaseURL: String = "https://assets.raza.run",
-        apiToken: String = "",
-        useRemoteWorkoutGeneration: Bool = true
+        apiToken: String = ""
     ) {
         self.loadSettings = {
             SettingsSnapshot(
@@ -249,8 +243,7 @@ final class SettingsViewModel {
                 equipmentProfile: EquipmentProfileDraft(equipmentProfile: try equipmentProfileStore.loadEquipmentProfile()),
                 backendBaseURL: backendBaseURL,
                 assetsBaseURL: assetsBaseURL,
-                apiToken: apiToken,
-                useRemoteWorkoutGeneration: useRemoteWorkoutGeneration
+                apiToken: apiToken
             )
         }
         self.saveSettings = { snapshot in
@@ -276,7 +269,6 @@ final class SettingsViewModel {
             backendBaseURL = snapshot.backendBaseURL
             assetsBaseURL = snapshot.assetsBaseURL
             apiToken = snapshot.apiToken
-            useRemoteWorkoutGeneration = snapshot.useRemoteWorkoutGeneration
         } catch {
             show(error)
         }
@@ -300,8 +292,7 @@ final class SettingsViewModel {
             equipmentProfile: equipmentProfile,
             backendBaseURL: backendBaseURL.trimmedForProfile,
             assetsBaseURL: assetsBaseURL.trimmedForProfile,
-            apiToken: apiToken.trimmedForProfile,
-            useRemoteWorkoutGeneration: useRemoteWorkoutGeneration
+            apiToken: apiToken.trimmedForProfile
         )
     }
 
@@ -318,7 +309,6 @@ struct SettingsSnapshot: Equatable {
     var backendBaseURL: String
     var assetsBaseURL: String
     var apiToken: String
-    var useRemoteWorkoutGeneration: Bool
 
     static let empty = SettingsSnapshot(
         bodyContext: BodyContextDraft(),
@@ -326,8 +316,7 @@ struct SettingsSnapshot: Equatable {
         equipmentProfile: EquipmentProfileDraft(),
         backendBaseURL: "https://nexus.raza.run/v1",
         assetsBaseURL: "https://assets.raza.run",
-        apiToken: "",
-        useRemoteWorkoutGeneration: true
+        apiToken: ""
     )
 }
 

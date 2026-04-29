@@ -6,7 +6,6 @@ enum WorkoutGenerationError: LocalizedError, Equatable {
     case missingExerciseCatalogItem
     case duplicateExercise(String)
     case unavailableEquipment(String)
-    case transportUnavailable
     case requestFailed(String)
 
     var errorDescription: String? {
@@ -21,8 +20,6 @@ enum WorkoutGenerationError: LocalizedError, Equatable {
             "The generated workout repeated exercise \(exerciseID)."
         case .unavailableEquipment(let equipment):
             "The generated workout includes unavailable equipment: \(equipment)."
-        case .transportUnavailable:
-            "Workout generation is not connected yet."
         case .requestFailed(let message):
             message
         }
@@ -31,12 +28,6 @@ enum WorkoutGenerationError: LocalizedError, Equatable {
 
 protocol WorkoutGenerationService {
     func generateWorkout(for request: WorkoutGenerationRequest) async throws -> GeneratedWorkout
-}
-
-struct UnavailableWorkoutGenerationService: WorkoutGenerationService {
-    func generateWorkout(for request: WorkoutGenerationRequest) async throws -> GeneratedWorkout {
-        throw WorkoutGenerationError.transportUnavailable
-    }
 }
 
 extension GeneratedWorkout {

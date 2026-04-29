@@ -31,6 +31,7 @@ Carthage/Build
 .DS_Store
 .idea/
 *.log
+Brainless/LocalSecrets.swift
 
 # Fastlane
 fastlane/report.xml
