@@ -128,19 +128,6 @@ struct SettingsView: View {
                 range: 2...7
             )
 
-            Picker("Session length", selection: $viewModel.trainingPreferences.sessionLengthMinutes) {
-                Text("30 min").tag(30)
-                Text("45 min").tag(45)
-                Text("60 min").tag(60)
-                Text("90 min").tag(90)
-            }
-
-            Picker("Intensity", selection: $viewModel.trainingPreferences.intensity) {
-                ForEach(WorkoutIntensity.allCases) { intensity in
-                    Text(intensity.displayName).tag(intensity)
-                }
-            }
-
             TextField("Additional notes (optional)", text: $viewModel.trainingPreferences.additionalNotes, axis: .vertical)
                 .lineLimit(2...4)
         }

@@ -21,15 +21,12 @@ extension TrainingPreferences {
         let goalsArray = FitnessGoal.allCases.filter { draft.goals.contains($0) }
         self.init(
             goals: goalsArray,
-            preferredDurationMinutes: draft.sessionLengthMinutes,
             styleNotes: draft.additionalNotes.trimmedForProfile,
             primaryGoal: goalsArray.first ?? .generalFitness,
             secondaryGoals: Array(goalsArray.dropFirst()),
             experience: draft.experience,
             preferredSplit: draft.preferredSplit,
-            workoutsPerWeek: draft.workoutsPerWeek,
-            sessionLengthMinutes: draft.sessionLengthMinutes,
-            preferredIntensity: draft.intensity
+            workoutsPerWeek: draft.workoutsPerWeek
         )
     }
 }
@@ -66,8 +63,6 @@ extension TrainingPreferencesDraft {
         experience = trainingPreferences.experience
         preferredSplit = trainingPreferences.preferredSplit
         workoutsPerWeek = trainingPreferences.workoutsPerWeek
-        sessionLengthMinutes = trainingPreferences.sessionLengthMinutes
-        intensity = trainingPreferences.preferredIntensity
         additionalNotes = trainingPreferences.styleNotes
     }
 }

@@ -256,23 +256,6 @@ private struct TrainingPreferencesStepView: View {
             }
 
             InlineStepperView(label: "Days per week", value: $draft.workoutsPerWeek, range: 2...7)
-
-            FormSectionLabel("Session length")
-            Picker("Session length", selection: $draft.sessionLengthMinutes) {
-                Text("30 min").tag(30)
-                Text("45 min").tag(45)
-                Text("60 min").tag(60)
-                Text("90 min").tag(90)
-            }
-            .pickerStyle(.segmented)
-
-            FormSectionLabel("Intensity")
-            Picker("Intensity", selection: $draft.intensity) {
-                ForEach(WorkoutIntensity.allCases) { intensity in
-                    Text(intensity.displayName).tag(intensity)
-                }
-            }
-            .pickerStyle(.segmented)
         }
     }
 }

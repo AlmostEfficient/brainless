@@ -17,8 +17,6 @@ struct TrainingPreferencesDraft: Equatable {
     var experience: TrainingExperience = .intermediate
     var preferredSplit: WorkoutSplit = .fullBody
     var workoutsPerWeek: Int = 3
-    var sessionLengthMinutes: Int = 45
-    var intensity: WorkoutIntensity = .moderate
     var additionalNotes = ""
 
     var isComplete: Bool { !goals.isEmpty }
