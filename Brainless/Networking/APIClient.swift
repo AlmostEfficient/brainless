@@ -65,6 +65,44 @@ struct APIClient {
         }
     }
 
+    func post<Body: Encodable, Response: Decodable>(_ path: String, body: Body) async throws -> Response {
+        guard let url = makeURL(path: path, queryItems: []) else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = try JSONEncoder.brainless.encode(body)
+
+        if let token = await tokenProvider.apiToken, !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        do {
+            let (data, response) = try await session.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw APIError.invalidResponse
+            }
+
+            guard (200..<300).contains(httpResponse.statusCode) else {
+                throw decodeAPIError(data: data, statusCode: httpResponse.statusCode)
+            }
+
+            do {
+                return try decoder.decode(Response.self, from: data)
+            } catch {
+                throw APIError.decodingFailed(error.localizedDescription)
+            }
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw APIError.transport(error.localizedDescription)
+        }
+    }
+
     private func makeURL(path: String, queryItems: [URLQueryItem]) -> URL? {
         let pathComponent = path.hasPrefix("/") ? String(path.dropFirst()) : path
         let url = baseURL.appending(path: pathComponent)

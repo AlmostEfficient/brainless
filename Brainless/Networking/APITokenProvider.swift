@@ -16,3 +16,13 @@ struct EmptyAPITokenProvider: APITokenProvider {
         get async { nil }
     }
 }
+
+struct StaticAPITokenProvider: APITokenProvider {
+    let token: String
+
+    var apiToken: String? {
+        get async {
+            token.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+}
