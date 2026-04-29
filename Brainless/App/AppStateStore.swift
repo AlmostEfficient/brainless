@@ -38,7 +38,7 @@ struct AppSettings: Codable, Equatable {
         backendBaseURL: String = "https://nexus.raza.run/v1",
         assetsBaseURL: String = "https://assets.raza.run",
         apiToken: String = "",
-        useRemoteWorkoutGeneration: Bool = false
+        useRemoteWorkoutGeneration: Bool = true
     ) {
         self.isOnboardingComplete = isOnboardingComplete
         self.backendBaseURL = backendBaseURL
@@ -48,4 +48,23 @@ struct AppSettings: Codable, Equatable {
     }
 
     static let `default` = AppSettings()
+
+    enum CodingKeys: String, CodingKey {
+        case isOnboardingComplete
+        case backendBaseURL
+        case assetsBaseURL
+        case apiToken
+        case useRemoteWorkoutGeneration
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            isOnboardingComplete: try container.decodeIfPresent(Bool.self, forKey: .isOnboardingComplete) ?? false,
+            backendBaseURL: try container.decodeIfPresent(String.self, forKey: .backendBaseURL) ?? Self.default.backendBaseURL,
+            assetsBaseURL: try container.decodeIfPresent(String.self, forKey: .assetsBaseURL) ?? Self.default.assetsBaseURL,
+            apiToken: try container.decodeIfPresent(String.self, forKey: .apiToken) ?? "",
+            useRemoteWorkoutGeneration: try container.decodeIfPresent(Bool.self, forKey: .useRemoteWorkoutGeneration) ?? true
+        )
+    }
 }

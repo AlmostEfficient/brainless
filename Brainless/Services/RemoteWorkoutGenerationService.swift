@@ -9,6 +9,6 @@ struct RemoteWorkoutGenerationService: WorkoutGenerationService {
 
     func generateWorkout(for request: WorkoutGenerationRequest) async throws -> GeneratedWorkout {
         let response: WorkoutGenerationResponse = try await apiClient.post("/generate-workout", body: request)
-        return try response.workout.validated()
+        return try response.workout.validated(against: request)
     }
 }

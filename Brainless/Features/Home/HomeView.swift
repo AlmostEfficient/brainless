@@ -4,7 +4,9 @@ struct HomeView: View {
     @State private var viewModel: HomeViewModel
 
     init(
-        service: WorkoutGenerationService = MockWorkoutGenerationService(),
+        service: WorkoutGenerationService,
+        catalogService: ExerciseCatalogService,
+        assetURLBuilder: ExerciseAssetURLBuilder = ExerciseAssetURLBuilder(),
         userProfileStore: UserProfileStore,
         trainingPreferencesStore: TrainingPreferencesStore,
         equipmentProfileStore: EquipmentProfileStore,
@@ -12,6 +14,8 @@ struct HomeView: View {
     ) {
         _viewModel = State(initialValue: HomeViewModel(
             service: service,
+            catalogService: catalogService,
+            assetURLBuilder: assetURLBuilder,
             userProfileStore: userProfileStore,
             trainingPreferencesStore: trainingPreferencesStore,
             equipmentProfileStore: equipmentProfileStore,
@@ -47,12 +51,13 @@ struct HomeView: View {
             .fullScreenCover(item: $viewModel.startedWorkout) { workout in
                 WorkoutModeView(
                     workout: workout,
+                    assetURLBuilder: viewModel.assetURLBuilder,
                     onSaveCompleted: viewModel.saveSessionAndClose,
                     onSavePartial: viewModel.saveSessionAndClose,
                     onDiscard: { viewModel.startedWorkout = nil }
                 )
             }
-            .task {
+            .onAppear {
                 viewModel.loadRecentHistorySummary()
             }
         }
@@ -169,20 +174,30 @@ final class HomeViewModel {
     var startedWorkout: GeneratedWorkout?
 
     private let service: WorkoutGenerationService
+    private let catalogService: ExerciseCatalogService
+    let assetURLBuilder: ExerciseAssetURLBuilder
     private let userProfileStore: UserProfileStore
     private let trainingPreferencesStore: TrainingPreferencesStore
     private let equipmentProfileStore: EquipmentProfileStore
     private let historyService: WorkoutHistoryService
     private var lastRequest: WorkoutGenerationRequest?
 
+    private var cachedBodyContext: UserBodyContext?
+    private var cachedTrainingPreferences: TrainingPreferences?
+    private var cachedEquipmentProfile: EquipmentProfile?
+
     init(
         service: WorkoutGenerationService,
+        catalogService: ExerciseCatalogService,
+        assetURLBuilder: ExerciseAssetURLBuilder,
         userProfileStore: UserProfileStore,
         trainingPreferencesStore: TrainingPreferencesStore,
         equipmentProfileStore: EquipmentProfileStore,
         historyService: WorkoutHistoryService
     ) {
         self.service = service
+        self.catalogService = catalogService
+        self.assetURLBuilder = assetURLBuilder
         self.userProfileStore = userProfileStore
         self.trainingPreferencesStore = trainingPreferencesStore
         self.equipmentProfileStore = equipmentProfileStore
@@ -190,20 +205,43 @@ final class HomeViewModel {
     }
 
     func generate() {
-        do {
-            let request = try makeRequest()
-            lastRequest = request
-            generate(request)
-        } catch {
-            show(error)
+        guard !isGenerating else { return }
+        isGenerating = true
+        isShowingError = false
+        errorMessage = ""
+
+        Task {
+            do {
+                let request = try await makeRequest()
+                lastRequest = request
+                generatedWorkout = try await service.generateWorkout(for: request)
+            } catch {
+                show(error)
+            }
+            isGenerating = false
         }
     }
 
     func regenerate() {
-        do {
-            generate(try lastRequest ?? makeRequest())
-        } catch {
-            show(error)
+        guard !isGenerating else { return }
+        isGenerating = true
+        isShowingError = false
+        errorMessage = ""
+
+        Task {
+            do {
+                let request: WorkoutGenerationRequest
+                if let lastRequest {
+                    request = lastRequest
+                } else {
+                    request = try await makeRequest()
+                }
+                lastRequest = request
+                generatedWorkout = try await service.generateWorkout(for: request)
+            } catch {
+                show(error)
+            }
+            isGenerating = false
         }
     }
 
@@ -223,21 +261,23 @@ final class HomeViewModel {
 
     func loadRecentHistorySummary() {
         do {
+            cachedBodyContext = try userProfileStore.loadBodyContext()
+            cachedTrainingPreferences = try trainingPreferencesStore.loadTrainingPreferences()
+            cachedEquipmentProfile = try equipmentProfileStore.loadEquipmentProfile()
             let summary = try historyService.historySummary(referenceDate: Date())
             recentHistorySummary = Self.formattedHistory(summary)
             recentHistoryLine = Self.formattedOneLiner(summary)
-            updateDefaultsFromProfile(summary: summary)
+            updateWorkoutType(from: cachedTrainingPreferences, history: summary)
         } catch {
             recentHistorySummary = "Recent history is unavailable."
         }
     }
 
-    private func updateDefaultsFromProfile(summary: WorkoutHistorySummary) {
-        guard let prefs = try? trainingPreferencesStore.loadTrainingPreferences() else { return }
+    private func updateWorkoutType(from prefs: TrainingPreferences?, history: WorkoutHistorySummary) {
+        guard let prefs else { return }
         switch prefs.preferredSplit {
-        case .pushPullLegs: workoutType = nextPPLDay(from: summary)
-        case .upperLower:   workoutType = nextUpperLowerDay(from: summary)
-        case .fullBody:     workoutType = "Full Body"
+        case .pushPullLegs: workoutType = nextPPLDay(from: history)
+        case .upperLower:   workoutType = nextUpperLowerDay(from: history)
         default:            workoutType = "Full Body"
         }
     }
@@ -254,27 +294,32 @@ final class HomeViewModel {
         return last.contains("upper") ? "Lower" : "Upper"
     }
 
-    private func generate(_ request: WorkoutGenerationRequest) {
-        guard !isGenerating else { return }
-        isGenerating = true
-        isShowingError = false
-        errorMessage = ""
-
-        Task {
-            do {
-                generatedWorkout = try await service.generateWorkout(for: request)
-            } catch {
-                show(error)
-            }
-            isGenerating = false
+    private func makeRequest() async throws -> WorkoutGenerationRequest {
+        let bodyContext: UserBodyContext
+        if let cachedBodyContext {
+            bodyContext = cachedBodyContext
+        } else {
+            bodyContext = try userProfileStore.loadBodyContext()
         }
-    }
 
-    private func makeRequest() throws -> WorkoutGenerationRequest {
-        let bodyContext = try userProfileStore.loadBodyContext()
-        let trainingPreferences = try trainingPreferencesStore.loadTrainingPreferences()
-        let equipmentProfile = try equipmentProfileStore.loadEquipmentProfile()
+        let trainingPreferences: TrainingPreferences
+        if let cachedTrainingPreferences {
+            trainingPreferences = cachedTrainingPreferences
+        } else {
+            trainingPreferences = try trainingPreferencesStore.loadTrainingPreferences()
+        }
+
+        let equipmentProfile: EquipmentProfile
+        if let cachedEquipmentProfile {
+            equipmentProfile = cachedEquipmentProfile
+        } else {
+            equipmentProfile = try equipmentProfileStore.loadEquipmentProfile()
+        }
         let history = try historyService.historySummary(referenceDate: Date())
+        let catalog = try await loadCatalogCandidates(
+            trainingPreferences: trainingPreferences,
+            equipmentProfile: equipmentProfile
+        )
 
         recentHistorySummary = Self.formattedHistory(history)
         recentHistoryLine = Self.formattedOneLiner(history)
@@ -291,9 +336,74 @@ final class HomeViewModel {
             todayNotes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
             requestedDurationMinutes: durationMinutes,
             historySummary: history,
-            exerciseCatalog: ExerciseCatalogItem.samples,
+            exerciseCatalog: catalog,
             recentHistory: history
         )
+    }
+
+    private func loadCatalogCandidates(
+        trainingPreferences: TrainingPreferences,
+        equipmentProfile: EquipmentProfile
+    ) async throws -> [ExerciseCatalogItem] {
+        let equipment = equipmentProfile.availableEquipment
+            .map(\.catalogQueryValue)
+            .joined(separator: ",")
+        let preferredMuscles = preferredCatalogMuscles(from: trainingPreferences)
+            .joined(separator: ",")
+
+        var response = try await catalogService.exercises(
+            matching: ExerciseCatalogQuery(
+                muscle: preferredMuscles.isEmpty ? nil : preferredMuscles,
+                equipment: equipment.isEmpty ? nil : equipment,
+                limit: 100
+            )
+        )
+
+        if response.data.count < 12, !preferredMuscles.isEmpty {
+            response = try await catalogService.exercises(
+                matching: ExerciseCatalogQuery(
+                    equipment: equipment.isEmpty ? nil : equipment,
+                    limit: 100
+                )
+            )
+        }
+
+        let catalog = response.data.map {
+            ExerciseCatalogItem(
+                id: $0.id,
+                name: $0.name,
+                muscle: $0.muscle,
+                equipment: $0.equipment
+            )
+        }
+
+        guard !catalog.isEmpty else {
+            throw WorkoutGenerationError.missingExerciseCatalogItem
+        }
+
+        return catalog
+    }
+
+    private func preferredCatalogMuscles(from preferences: TrainingPreferences) -> [String] {
+        let selected = preferences.preferredMuscles.filter { $0 != .fullBody && $0 != .cardio }
+        if !selected.isEmpty {
+            return selected.map(\.catalogQueryValue)
+        }
+
+        switch workoutType {
+        case "Push":
+            return ["pectorals", "delts", "triceps"]
+        case "Pull":
+            return ["lats", "upper back", "biceps"]
+        case "Legs", "Lower":
+            return ["quads", "hamstrings", "glutes", "calves"]
+        case "Upper":
+            return ["pectorals", "lats", "delts", "biceps", "triceps"]
+        case "Mobility", "Cardio":
+            return []
+        default:
+            return []
+        }
     }
 
     private static func formattedOneLiner(_ summary: WorkoutHistorySummary) -> String {
@@ -330,6 +440,8 @@ final class HomeViewModel {
 #Preview {
     HomeView(
         service: MockWorkoutGenerationService(delayNanoseconds: 0),
+        catalogService: MockExerciseCatalogService(),
+        assetURLBuilder: ExerciseAssetURLBuilder(),
         userProfileStore: HomePreviewUserProfileStore(),
         trainingPreferencesStore: HomePreviewTrainingPreferencesStore(),
         equipmentProfileStore: HomePreviewEquipmentProfileStore(),
@@ -372,5 +484,49 @@ private struct HomePreviewWorkoutHistoryService: WorkoutHistoryService {
                 )
             ]
         )
+    }
+}
+
+private extension EquipmentType {
+    var catalogQueryValue: String {
+        switch self {
+        case .bodyweight:
+            "body weight"
+        case .dumbbells:
+            "dumbbell"
+        case .barbell:
+            "barbell"
+        case .kettlebell:
+            "kettlebell"
+        case .resistanceBands:
+            "band"
+        case .cableMachine:
+            "cable"
+        case .machine:
+            "machine"
+        case .bench:
+            "body weight"
+        case .pullUpBar:
+            "body weight"
+        case .cardioMachine:
+            "stationary bike"
+        }
+    }
+}
+
+private extension MuscleGroup {
+    var catalogQueryValue: String {
+        switch self {
+        case .chest:
+            "pectorals"
+        case .back:
+            "lats"
+        case .shoulders:
+            "delts"
+        case .core:
+            "abs"
+        default:
+            rawValue
+        }
     }
 }

@@ -3,6 +3,7 @@ import Combine
 
 struct WorkoutModeView: View {
     let workout: GeneratedWorkout
+    var assetURLBuilder: ExerciseAssetURLBuilder = ExerciseAssetURLBuilder()
     var onSaveCompleted: (WorkoutSession) -> Void = { _ in }
     var onSavePartial: (WorkoutSession) -> Void = { _ in }
     var onDiscard: () -> Void = {}
@@ -26,6 +27,7 @@ struct WorkoutModeView: View {
                     ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
                         ExercisePage(
                             exercise: exercise,
+                            assetURLBuilder: assetURLBuilder,
                             position: index + 1,
                             total: workout.exercises.count,
                             isSkipped: skippedExerciseIDs.contains(exercise.id),
@@ -164,6 +166,7 @@ struct WorkoutModeView: View {
 
 private struct ExercisePage: View {
     let exercise: WorkoutExercise
+    let assetURLBuilder: ExerciseAssetURLBuilder
     let position: Int
     let total: Int
     let isSkipped: Bool
@@ -179,7 +182,7 @@ private struct ExercisePage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                ExerciseVisualView(exerciseID: exercise.catalogItem.id)
+                ExerciseVisualView(exerciseID: exercise.catalogItem.id, assetURLBuilder: assetURLBuilder)
                     .frame(height: 300)
                     .padding(.top, 78)
 

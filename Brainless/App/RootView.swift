@@ -21,8 +21,10 @@ struct RootView: View {
 
     private func completeOnboarding() {
         do {
-            let data = try dependencies.appStateStore.makeSettingsData(isOnboardingComplete: true)
             let record = settingsRecords.first ?? AppSettingsRecord()
+            var settings = dependencies.appStateStore.loadSettings(record)
+            settings.isOnboardingComplete = true
+            let data = try dependencies.appStateStore.makeSettingsData(settings)
             record.jsonData = data
             record.updatedAt = .now
 
