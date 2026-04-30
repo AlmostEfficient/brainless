@@ -4,7 +4,7 @@ import Combine
 struct WorkoutModeView: View {
     @Binding var workout: GeneratedWorkout
     var assetURLBuilder: ExerciseAssetURLBuilder = ExerciseAssetURLBuilder()
-    var onRegenerate: () -> Void = {}
+    var onRegenerate: (String) -> Void = { _ in }
     var isRegenerating: Bool = false
     var onSaveCompleted: (WorkoutSession) -> Void = { _ in }
     var onSavePartial: (WorkoutSession) -> Void = { _ in }
@@ -16,6 +16,8 @@ struct WorkoutModeView: View {
     @State private var restEndsAt: Date?
     @State private var restNow = Date()
     @State private var isFinishSheetPresented = false
+    @State private var regenerationGuidance = ""
+    @State private var currentTab: WorkoutHorizontalTab = .exercises
 
     private let restTicker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -33,7 +35,15 @@ struct WorkoutModeView: View {
                                 OverviewPage(
                                     workout: workout,
                                     isRegenerating: isRegenerating,
-                                    onRegenerate: onRegenerate
+                                    regenerationGuidance: $regenerationGuidance,
+                                    onRegenerate: { onRegenerate(regenerationGuidance) },
+                                    onStart: {
+                                        if let firstID = workout.exercises.first?.id {
+                                            withAnimation(.easeInOut(duration: 0.35)) {
+                                                proxy.scrollTo(firstID, anchor: .top)
+                                            }
+                                        }
+                                    }
                                 )
                                 .frame(width: geo.size.width, height: pageHeight)
                                 .id(WorkoutScrollTarget.overview)
@@ -194,11 +204,13 @@ struct WorkoutModeView: View {
 private struct OverviewPage: View {
     let workout: GeneratedWorkout
     let isRegenerating: Bool
+    @Binding var regenerationGuidance: String
     let onRegenerate: () -> Void
+    let onStart: () -> Void
 
     var body: some View {
         VStack(spacing: 16) {
-            Spacer(minLength: 72)
+            Spacer(minLength: 56)
 
             Text(workout.title)
                 .font(.title.bold())
@@ -219,6 +231,22 @@ private struct OverviewPage: View {
                     .lineLimit(2)
             }
 
+            exercisePreviewList
+
+            TextField("Change anything?", text: $regenerationGuidance, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1...3)
+                .padding(12)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+
+            Button(action: onStart) {
+                Label("Start Workout", systemImage: "play.fill")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+
             Button(action: onRegenerate) {
                 HStack(spacing: 8) {
                     if isRegenerating {
@@ -235,10 +263,6 @@ private struct OverviewPage: View {
             .controlSize(.large)
             .disabled(isRegenerating)
 
-            Text("Swipe up for exercises")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-
             Spacer()
             Label("Not medical advice", systemImage: "exclamationmark.shield.fill")
                 .font(.caption2)
@@ -252,6 +276,36 @@ private struct OverviewPage: View {
 
     private var metaLine: String {
         "\(workout.exercises.count) moves · \(workout.estimatedDurationMinutes) min · \(workout.intensity)"
+    }
+
+    private var exercisePreviewList: some View {
+        VStack(spacing: 8) {
+            ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("\(index + 1)")
+                        .font(.caption.weight(.bold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, alignment: .trailing)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(exercise.catalogItem.name)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+
+                        Text("\(exercise.targetSets)x \(exercise.targetReps) · \(exercise.catalogItem.equipment)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -272,7 +326,7 @@ private struct ExercisePage: View {
 
     var body: some View {
         GeometryReader { geo in
-            let visualH = min(geo.size.width * 0.85, geo.size.height * 0.36)
+            let visualH = min(geo.size.width * 0.75, geo.size.height * 0.28)
             VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 68)
 
@@ -294,24 +348,24 @@ private struct ExercisePage: View {
                             .foregroundStyle(.orange)
                     }
                 }
-                .padding(.top, 10)
+                .padding(.top, 8)
 
                 Text(prescriptionLine)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
-                    .padding(.top, 4)
+                    .padding(.top, 2)
 
                 RestTimerBlock(restRemaining: restRemaining, restSeconds: exercise.restSeconds, onStartRest: onStartRest)
-                    .padding(.top, 8)
+                    .padding(.top, 6)
 
                 if let note = primaryNote, !note.isEmpty {
                     Text(note)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
-                        .padding(.top, 6)
+                        .padding(.top, 4)
                 }
 
                 Spacer(minLength: 4)
@@ -332,13 +386,13 @@ private struct ExercisePage: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
-                .padding(.top, 8)
+                .padding(.top, 6)
 
                 Text("Not medical advice — stop for pain or dizziness.")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-                    .padding(.top, 6)
-                    .padding(.bottom, 20)
+                    .padding(.top, 4)
+                    .padding(.bottom, 16)
             }
             .padding(.horizontal, 18)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -403,7 +457,7 @@ private struct CompactLoggingBlock: View {
                 .accessibilityLabel("Log set")
             }
 
-            ForEach(loggedSets.prefix(4)) { set in
+            ForEach(loggedSets) { set in
                 HStack {
                     Text("#\(set.setNumber)")
                         .font(.caption.weight(.semibold))
@@ -419,6 +473,11 @@ private struct CompactLoggingBlock: View {
                     .buttonStyle(.borderless)
                     .font(.caption)
                 }
+            }
+            if loggedSets.count > 4 {
+                Text("+\(loggedSets.count - 4) more")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
         }
     }

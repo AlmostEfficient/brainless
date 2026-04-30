@@ -147,6 +147,21 @@ struct GeneratedWorkout: Codable, Identifiable, Equatable, Hashable {
     var safetyNote: String
     var generationContextSummary: String?
 
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case summary
+        case focus
+        case focusAreas
+        case estimatedDurationMinutes
+        case intensity
+        case exercises
+        case generatedAt
+        case rationale
+        case safetyNote
+        case generationContextSummary
+    }
+
     init(
         id: UUID = UUID(),
         title: String,
@@ -174,6 +189,38 @@ struct GeneratedWorkout: Codable, Identifiable, Equatable, Hashable {
         self.safetyNote = safetyNote
         self.generationContextSummary = generationContextSummary
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        let title = try container.decode(String.self, forKey: .title)
+        let summary = try container.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        let focusValues = try container.decodeIfPresent([String].self, forKey: .focus) ?? []
+        let focus = focusValues.compactMap(MuscleGroup.init(catalogValue:))
+        let focusAreas = try container.decodeIfPresent([String].self, forKey: .focusAreas) ?? focusValues
+        let estimatedDurationMinutes = try container.decode(Int.self, forKey: .estimatedDurationMinutes)
+        let intensity = try container.decodeIfPresent(String.self, forKey: .intensity) ?? "Moderate"
+        let exercises = try container.decode([WorkoutExercise].self, forKey: .exercises)
+        let generatedAt = try container.decodeIfPresent(Date.self, forKey: .generatedAt) ?? Date()
+        let rationale = try container.decodeIfPresent(String.self, forKey: .rationale)
+        let safetyNote = try container.decodeIfPresent(String.self, forKey: .safetyNote) ?? "Warm up first, keep reps controlled, and stop any movement that causes sharp pain."
+        let generationContextSummary = try container.decodeIfPresent(String.self, forKey: .generationContextSummary)
+
+        self.init(
+            id: id,
+            title: title,
+            summary: summary,
+            focus: focus,
+            focusAreas: focusAreas,
+            estimatedDurationMinutes: estimatedDurationMinutes,
+            intensity: intensity,
+            exercises: exercises,
+            generatedAt: generatedAt,
+            rationale: rationale,
+            safetyNote: safetyNote,
+            generationContextSummary: generationContextSummary
+        )
+    }
 }
 
 struct WorkoutExercise: Codable, Identifiable, Equatable, Hashable {
@@ -190,6 +237,22 @@ struct WorkoutExercise: Codable, Identifiable, Equatable, Hashable {
     var coachingNote: String?
     var substitutionNote: String?
     var safetyNote: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case catalogItem
+        case orderIndex
+        case targetSets
+        case sets
+        case targetReps
+        case reps
+        case durationSeconds
+        case restSeconds
+        case notes
+        case coachingNote
+        case substitutionNote
+        case safetyNote
+    }
 
     init(
         id: UUID = UUID(),
@@ -219,6 +282,43 @@ struct WorkoutExercise: Codable, Identifiable, Equatable, Hashable {
         self.coachingNote = coachingNote ?? notes
         self.substitutionNote = substitutionNote
         self.safetyNote = safetyNote
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        let catalogItem = try container.decode(ExerciseCatalogItem.self, forKey: .catalogItem)
+        let orderIndex = try container.decodeIfPresent(Int.self, forKey: .orderIndex) ?? 0
+        let targetSets = try container.decodeIfPresent(Int.self, forKey: .targetSets)
+            ?? container.decodeIfPresent(Int.self, forKey: .sets)
+            ?? 1
+        let sets = try container.decodeIfPresent(Int.self, forKey: .sets)
+        let targetReps = try container.decodeIfPresent(String.self, forKey: .targetReps)
+            ?? container.decodeIfPresent(String.self, forKey: .reps)
+            ?? ""
+        let reps = try container.decodeIfPresent(String.self, forKey: .reps)
+        let durationSeconds = try container.decodeIfPresent(Int.self, forKey: .durationSeconds)
+        let restSeconds = try container.decodeIfPresent(Int.self, forKey: .restSeconds) ?? 90
+        let notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        let coachingNote = try container.decodeIfPresent(String.self, forKey: .coachingNote)
+        let substitutionNote = try container.decodeIfPresent(String.self, forKey: .substitutionNote)
+        let safetyNote = try container.decodeIfPresent(String.self, forKey: .safetyNote)
+
+        self.init(
+            id: id,
+            catalogItem: catalogItem,
+            orderIndex: orderIndex,
+            targetSets: targetSets,
+            sets: sets,
+            targetReps: targetReps,
+            reps: reps,
+            durationSeconds: durationSeconds,
+            restSeconds: restSeconds,
+            notes: notes,
+            coachingNote: coachingNote,
+            substitutionNote: substitutionNote,
+            safetyNote: safetyNote
+        )
     }
 }
 
@@ -306,6 +406,60 @@ struct WorkoutGenerationResponse: Codable, Equatable, Hashable {
     var workout: GeneratedWorkout
     var alternatives: [GeneratedWorkout]
     var warnings: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case workout
+        case alternatives
+        case warnings
+    }
+
+    init(workout: GeneratedWorkout, alternatives: [GeneratedWorkout] = [], warnings: [String] = []) {
+        self.workout = workout
+        self.alternatives = alternatives
+        self.warnings = warnings
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.workout = try container.decode(GeneratedWorkout.self, forKey: .workout)
+        self.alternatives = try container.decodeIfPresent([GeneratedWorkout].self, forKey: .alternatives) ?? []
+        self.warnings = try container.decodeIfPresent([String].self, forKey: .warnings) ?? []
+    }
+}
+
+private extension MuscleGroup {
+    nonisolated init?(catalogValue: String) {
+        switch catalogValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "pectorals", "chest":
+            self = .chest
+        case "lats", "traps", "upper back", "back":
+            self = .back
+        case "delts", "shoulders":
+            self = .shoulders
+        case "abs", "core":
+            self = .core
+        case "quadriceps", "quads":
+            self = .quads
+        case "hamstrings":
+            self = .hamstrings
+        case "biceps":
+            self = .biceps
+        case "triceps":
+            self = .triceps
+        case "forearms":
+            self = .forearms
+        case "glutes":
+            self = .glutes
+        case "calves":
+            self = .calves
+        case "full body", "fullbody":
+            self = .fullBody
+        case "cardio":
+            self = .cardio
+        default:
+            self.init(rawValue: catalogValue)
+        }
+    }
 }
 
 extension UserBodyContext {

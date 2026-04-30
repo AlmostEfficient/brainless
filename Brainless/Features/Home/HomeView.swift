@@ -5,6 +5,7 @@ struct HomeView: View {
 
     init(
         service: WorkoutGenerationService,
+        mockService: WorkoutGenerationService = MockWorkoutGenerationService(),
         catalogService: ExerciseCatalogService,
         assetURLBuilder: ExerciseAssetURLBuilder = ExerciseAssetURLBuilder(),
         userProfileStore: UserProfileStore,
@@ -14,6 +15,7 @@ struct HomeView: View {
     ) {
         _viewModel = State(initialValue: HomeViewModel(
             service: service,
+            mockService: mockService,
             catalogService: catalogService,
             assetURLBuilder: assetURLBuilder,
             userProfileStore: userProfileStore,
@@ -29,10 +31,7 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     greeting
                     controls
-                    generateButton
-                    if let workout = viewModel.generatedWorkout {
-                        generatedWorkoutCard(workout)
-                    }
+                    generationActions
                     recentHistory
                 }
                 .padding(20)
@@ -44,14 +43,14 @@ struct HomeView: View {
             } message: {
                 Text(viewModel.errorMessage)
             }
-            .fullScreenCover(item: $viewModel.startedWorkout) { _ in
+            .fullScreenCover(item: $viewModel.startedWorkout) { item in
                 WorkoutModeView(
                     workout: Binding(
-                        get: { viewModel.startedWorkout! },
+                        get: { viewModel.startedWorkout ?? item },
                         set: { viewModel.startedWorkout = $0 }
                     ),
                     assetURLBuilder: viewModel.assetURLBuilder,
-                    onRegenerate: { viewModel.regenerate() },
+                    onRegenerate: { viewModel.regenerate(guidance: $0) },
                     isRegenerating: viewModel.isGenerating,
                     onSaveCompleted: viewModel.saveSessionAndClose,
                     onSavePartial: viewModel.saveSessionAndClose,
@@ -117,9 +116,15 @@ struct HomeView: View {
         }
     }
 
+    private var generationActions: some View {
+        VStack(spacing: 10) {
+            generateButton
+            mockGenerateButton
+        }
+    }
+
     private var generateButton: some View {
         Button {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             viewModel.generate()
         } label: {
             HStack(spacing: 8) {
@@ -139,54 +144,25 @@ struct HomeView: View {
         .disabled(viewModel.isGenerating)
     }
 
-    private func generatedWorkoutCard(_ workout: GeneratedWorkout) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Ready to go")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            Text(workout.title)
-                .font(.title3.bold())
-
-            Text("\(workout.estimatedDurationMinutes) min · \(workout.intensity) · \(workout.exercises.count) moves")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            VStack(spacing: 10) {
-                Button {
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                    viewModel.start(workout)
-                } label: {
-                    Label("Start workout", systemImage: "play.fill")
-                        .frame(maxWidth: .infinity)
+    private var mockGenerateButton: some View {
+        Button {
+            viewModel.generateMock()
+        } label: {
+            HStack(spacing: 8) {
+                if viewModel.isGeneratingMock {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "testtube.2")
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-
-                Button {
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                    viewModel.regenerate()
-                } label: {
-                    HStack(spacing: 8) {
-                        if viewModel.isGenerating {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        Text(viewModel.isGenerating ? "Regenerating…" : "Regenerate")
-                            .fontWeight(.semibold)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .disabled(viewModel.isGenerating)
+                Text(viewModel.isGeneratingMock ? "Loading mock…" : "Use Mock Workout")
+                    .fontWeight(.semibold)
             }
+            .frame(maxWidth: .infinity)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(viewModel.isGenerating)
     }
 
     private var recentHistory: some View {
@@ -220,11 +196,13 @@ final class HomeViewModel {
     var recentHistoryLine = ""
     var generatedWorkout: GeneratedWorkout?
     var isGenerating = false
+    var isGeneratingMock = false
     var isShowingError = false
     var errorMessage = ""
     var startedWorkout: GeneratedWorkout?
 
     private let service: WorkoutGenerationService
+    private let mockService: WorkoutGenerationService
     private let catalogService: ExerciseCatalogService
     let assetURLBuilder: ExerciseAssetURLBuilder
     private let userProfileStore: UserProfileStore
@@ -239,6 +217,7 @@ final class HomeViewModel {
 
     init(
         service: WorkoutGenerationService,
+        mockService: WorkoutGenerationService,
         catalogService: ExerciseCatalogService,
         assetURLBuilder: ExerciseAssetURLBuilder,
         userProfileStore: UserProfileStore,
@@ -247,6 +226,7 @@ final class HomeViewModel {
         historyService: WorkoutHistoryService
     ) {
         self.service = service
+        self.mockService = mockService
         self.catalogService = catalogService
         self.assetURLBuilder = assetURLBuilder
         self.userProfileStore = userProfileStore
@@ -265,7 +245,9 @@ final class HomeViewModel {
             do {
                 let request = try await makeRequest()
                 lastRequest = request
-                generatedWorkout = try await service.generateWorkout(for: request)
+                let workout = try await service.generateWorkout(for: request)
+                generatedWorkout = workout
+                startedWorkout = workout
             } catch {
                 show(error)
             }
@@ -273,7 +255,29 @@ final class HomeViewModel {
         }
     }
 
-    func regenerate() {
+    func generateMock() {
+        guard !isGenerating else { return }
+        isGenerating = true
+        isGeneratingMock = true
+        isShowingError = false
+        errorMessage = ""
+
+        Task {
+            do {
+                let request = try await makeRequest()
+                lastRequest = request
+                let workout = try await mockService.generateWorkout(for: request)
+                generatedWorkout = workout
+                startedWorkout = workout
+            } catch {
+                show(error)
+            }
+            isGeneratingMock = false
+            isGenerating = false
+        }
+    }
+
+    func regenerate(guidance: String = "") {
         guard !isGenerating else { return }
         isGenerating = true
         isShowingError = false
@@ -281,11 +285,18 @@ final class HomeViewModel {
 
         Task {
             do {
-                let request: WorkoutGenerationRequest
+                var request: WorkoutGenerationRequest
                 if let lastRequest {
                     request = lastRequest
                 } else {
                     request = try await makeRequest()
+                }
+                let trimmedGuidance = guidance.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedGuidance.isEmpty {
+                    request.todayNotes = [request.todayNotes, trimmedGuidance]
+                        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                        .joined(separator: "\nRegeneration guidance: ")
+                    request.clientRequestID = UUID()
                 }
                 lastRequest = request
                 let workout = try await service.generateWorkout(for: request)
