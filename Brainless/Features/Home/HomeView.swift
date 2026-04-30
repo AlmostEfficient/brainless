@@ -30,28 +30,29 @@ struct HomeView: View {
                     greeting
                     controls
                     generateButton
+                    if let workout = viewModel.generatedWorkout {
+                        generatedWorkoutCard(workout)
+                    }
                     recentHistory
                 }
                 .padding(20)
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Today")
-            .navigationDestination(item: $viewModel.generatedWorkout) { workout in
-                WorkoutPreviewView(
-                    workout: workout,
-                    onStart: { viewModel.start(workout) },
-                    onRegenerate: { viewModel.regenerate() }
-                )
-            }
             .alert("Generation failed", isPresented: $viewModel.isShowingError) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(viewModel.errorMessage)
             }
-            .fullScreenCover(item: $viewModel.startedWorkout) { workout in
+            .fullScreenCover(item: $viewModel.startedWorkout) { _ in
                 WorkoutModeView(
-                    workout: workout,
+                    workout: Binding(
+                        get: { viewModel.startedWorkout! },
+                        set: { viewModel.startedWorkout = $0 }
+                    ),
                     assetURLBuilder: viewModel.assetURLBuilder,
+                    onRegenerate: { viewModel.regenerate() },
+                    isRegenerating: viewModel.isGenerating,
                     onSaveCompleted: viewModel.saveSessionAndClose,
                     onSavePartial: viewModel.saveSessionAndClose,
                     onDiscard: { viewModel.startedWorkout = nil }
@@ -136,6 +137,56 @@ struct HomeView: View {
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
         .disabled(viewModel.isGenerating)
+    }
+
+    private func generatedWorkoutCard(_ workout: GeneratedWorkout) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Ready to go")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            Text(workout.title)
+                .font(.title3.bold())
+
+            Text("\(workout.estimatedDurationMinutes) min · \(workout.intensity) · \(workout.exercises.count) moves")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 10) {
+                Button {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    viewModel.start(workout)
+                } label: {
+                    Label("Start workout", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Button {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    viewModel.regenerate()
+                } label: {
+                    HStack(spacing: 8) {
+                        if viewModel.isGenerating {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        Text(viewModel.isGenerating ? "Regenerating…" : "Regenerate")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(viewModel.isGenerating)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var recentHistory: some View {
@@ -237,7 +288,11 @@ final class HomeViewModel {
                     request = try await makeRequest()
                 }
                 lastRequest = request
-                generatedWorkout = try await service.generateWorkout(for: request)
+                let workout = try await service.generateWorkout(for: request)
+                generatedWorkout = workout
+                if startedWorkout != nil {
+                    startedWorkout = workout
+                }
             } catch {
                 show(error)
             }

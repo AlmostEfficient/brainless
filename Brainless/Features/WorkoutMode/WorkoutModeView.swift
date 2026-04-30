@@ -2,13 +2,14 @@ import SwiftUI
 import Combine
 
 struct WorkoutModeView: View {
-    let workout: GeneratedWorkout
+    @Binding var workout: GeneratedWorkout
     var assetURLBuilder: ExerciseAssetURLBuilder = ExerciseAssetURLBuilder()
+    var onRegenerate: () -> Void = {}
+    var isRegenerating: Bool = false
     var onSaveCompleted: (WorkoutSession) -> Void = { _ in }
     var onSavePartial: (WorkoutSession) -> Void = { _ in }
     var onDiscard: () -> Void = {}
 
-    @State private var selectedExerciseID: UUID?
     @State private var startedAt = Date()
     @State private var skippedExerciseIDs: Set<UUID> = []
     @State private var loggedSetsByExercise: [UUID: [LoggedSet]] = [:]
@@ -19,36 +20,60 @@ struct WorkoutModeView: View {
     private let restTicker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        ZStack(alignment: .top) {
-            if workout.exercises.isEmpty {
-                ContentUnavailableView("No Exercises", systemImage: "figure.strengthtraining.traditional")
-            } else {
-                TabView(selection: $selectedExerciseID) {
-                    ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
-                        ExercisePage(
-                            exercise: exercise,
-                            assetURLBuilder: assetURLBuilder,
-                            position: index + 1,
-                            total: workout.exercises.count,
-                            isSkipped: skippedExerciseIDs.contains(exercise.id),
-                            loggedSets: loggedSetsByExercise[exercise.id, default: []],
-                            restRemaining: restRemaining,
-                            onLogSet: { logSet(for: exercise, draft: $0) },
-                            onDeleteSet: { deleteSet($0, from: exercise) },
-                            onSkip: { skip(exercise) },
-                            onStartRest: { startRest(seconds: exercise.restSeconds) }
-                        )
-                        .tag(Optional(exercise.id))
+        GeometryReader { geo in
+            let pageHeight = geo.size.height
+            ZStack(alignment: .top) {
+                if workout.exercises.isEmpty {
+                    ContentUnavailableView("No Exercises", systemImage: "figure.strengthtraining.traditional")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical) {
+                            VStack(spacing: 0) {
+                                OverviewPage(
+                                    workout: workout,
+                                    isRegenerating: isRegenerating,
+                                    onRegenerate: onRegenerate
+                                )
+                                .frame(width: geo.size.width, height: pageHeight)
+                                .id(WorkoutScrollTarget.overview)
+
+                                ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
+                                    ExercisePage(
+                                        exercise: exercise,
+                                        assetURLBuilder: assetURLBuilder,
+                                        position: index + 1,
+                                        total: workout.exercises.count,
+                                        isSkipped: skippedExerciseIDs.contains(exercise.id),
+                                        loggedSets: loggedSetsByExercise[exercise.id, default: []],
+                                        restRemaining: restRemaining,
+                                        onLogSet: { logSet(for: exercise, draft: $0) },
+                                        onDeleteSet: { deleteSet($0, from: exercise) },
+                                        onSkip: { skip(exercise, scrollProxy: proxy) },
+                                        onStartRest: { startRest(seconds: exercise.restSeconds) }
+                                    )
+                                    .frame(width: geo.size.width, height: pageHeight)
+                                    .id(exercise.id)
+                                }
+                            }
+                            .scrollTargetLayout()
+                        }
+                        .scrollTargetBehavior(.paging)
+                        .scrollIndicators(.hidden)
+                        .scrollBounceBehavior(.basedOnSize)
+                        .ignoresSafeArea(edges: .bottom)
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .ignoresSafeArea()
-            }
 
-            header
+                header
+            }
         }
-        .onAppear {
-            selectedExerciseID = selectedExerciseID ?? workout.exercises.first?.id
+        .background(Color(.systemBackground))
+        .onChange(of: workout.id) { _, _ in
+            startedAt = Date()
+            skippedExerciseIDs = []
+            loggedSetsByExercise = [:]
+            restEndsAt = nil
         }
         .onReceive(restTicker) { restNow = $0 }
         .sheet(isPresented: $isFinishSheetPresented) {
@@ -129,26 +154,28 @@ struct WorkoutModeView: View {
         loggedSetsByExercise[exercise.id, default: []].removeAll { $0.id == set.id }
     }
 
-    private func skip(_ exercise: WorkoutExercise) {
+    private func skip(_ exercise: WorkoutExercise, scrollProxy: ScrollViewProxy) {
         if skippedExerciseIDs.contains(exercise.id) {
             skippedExerciseIDs.remove(exercise.id)
         } else {
             skippedExerciseIDs.insert(exercise.id)
+            scrollToNext(after: exercise, proxy: scrollProxy)
         }
-        advance(after: exercise)
+    }
+
+    private func scrollToNext(after exercise: WorkoutExercise, proxy: ScrollViewProxy) {
+        guard let index = workout.exercises.firstIndex(where: { $0.id == exercise.id }) else { return }
+        let nextIndex = workout.exercises.index(after: index)
+        guard workout.exercises.indices.contains(nextIndex) else { return }
+        let nextID = workout.exercises[nextIndex].id
+        withAnimation(.easeInOut(duration: 0.25)) {
+            proxy.scrollTo(nextID, anchor: .top)
+        }
     }
 
     private func startRest(seconds: Int) {
         restNow = Date()
         restEndsAt = Date().addingTimeInterval(TimeInterval(max(seconds, 1)))
-    }
-
-    private func advance(after exercise: WorkoutExercise) {
-        guard let index = workout.exercises.firstIndex(where: { $0.id == exercise.id }) else { return }
-        let nextIndex = workout.exercises.index(after: index)
-        if workout.exercises.indices.contains(nextIndex) {
-            withAnimation { selectedExerciseID = workout.exercises[nextIndex].id }
-        }
     }
 
     private func buildSession(status: WorkoutCompletionStatus) -> WorkoutSession {
@@ -161,6 +188,70 @@ struct WorkoutModeView: View {
             loggedSets: loggedSetsByExercise.values.flatMap { $0 }.sorted { $0.completedAt < $1.completedAt },
             notes: skippedExerciseIDs.isEmpty ? nil : "Skipped \(skippedExerciseIDs.count) exercise(s)."
         )
+    }
+}
+
+private struct OverviewPage: View {
+    let workout: GeneratedWorkout
+    let isRegenerating: Bool
+    let onRegenerate: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer(minLength: 72)
+
+            Text(workout.title)
+                .font(.title.bold())
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .minimumScaleFactor(0.85)
+
+            Text(metaLine)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            if let line = workout.generationContextSummary, !line.isEmpty {
+                Text(line)
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+
+            Button(action: onRegenerate) {
+                HStack(spacing: 8) {
+                    if isRegenerating {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    Text(isRegenerating ? "Regenerating…" : "Regenerate")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .disabled(isRegenerating)
+
+            Text("Swipe up for exercises")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+
+            Spacer()
+            Label("Not medical advice", systemImage: "exclamationmark.shield.fill")
+                .font(.caption2)
+                .foregroundStyle(.orange.opacity(0.9))
+                .padding(.bottom, 28)
+        }
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground))
+    }
+
+    private var metaLine: String {
+        "\(workout.exercises.count) moves · \(workout.estimatedDurationMinutes) min · \(workout.intensity)"
     }
 }
 
@@ -180,36 +271,52 @@ private struct ExercisePage: View {
     @State private var draftSet = DraftLoggedSet()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                ExerciseVisualView(exerciseID: exercise.catalogItem.id, assetURLBuilder: assetURLBuilder)
-                    .frame(height: 300)
-                    .padding(.top, 78)
+        GeometryReader { geo in
+            let visualH = min(geo.size.width * 0.85, geo.size.height * 0.36)
+            VStack(alignment: .leading, spacing: 0) {
+                Spacer(minLength: 68)
 
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("\(position) of \(total)")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Text(exercise.catalogItem.name)
-                            .font(.largeTitle.weight(.bold))
-                            .lineLimit(3)
-                    }
-                    Spacer()
+                ExerciseVisualView(exerciseID: exercise.catalogItem.id, assetURLBuilder: assetURLBuilder)
+                    .frame(height: visualH)
+                    .frame(maxWidth: .infinity)
+
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(exercise.catalogItem.name)
+                        .font(.title2.weight(.bold))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                    Spacer(minLength: 8)
+                    Text("\(position)/\(total)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
                     if isSkipped {
                         Image(systemName: "forward.end.fill")
                             .foregroundStyle(.orange)
                     }
                 }
+                .padding(.top, 10)
 
-                PrescriptionBlock(exercise: exercise)
-                NotesBlock(title: "Coaching", systemImage: "lightbulb", text: exercise.notes)
-                NotesBlock(title: "Safety", systemImage: "exclamationmark.shield", text: "Not medical advice. Stop for pain, dizziness, or unusual symptoms, and get professional guidance for injuries or medical conditions.")
-                NotesBlock(title: "Substitution", systemImage: "arrow.triangle.2.circlepath", text: "Swap for a similar \(exercise.catalogItem.muscle.displayName.lowercased()) movement using available equipment if this does not fit today.")
+                Text(prescriptionLine)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .padding(.top, 4)
 
                 RestTimerBlock(restRemaining: restRemaining, restSeconds: exercise.restSeconds, onStartRest: onStartRest)
+                    .padding(.top, 8)
 
-                LoggingBlock(
+                if let note = primaryNote, !note.isEmpty {
+                    Text(note)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .padding(.top, 6)
+                }
+
+                Spacer(minLength: 4)
+
+                CompactLoggingBlock(
                     draftSet: $draftSet,
                     loggedSets: loggedSets,
                     onLogSet: {
@@ -220,72 +327,32 @@ private struct ExercisePage: View {
                 )
 
                 Button(role: isSkipped ? .cancel : nil, action: onSkip) {
-                    Label(isSkipped ? "Undo Skip" : "Skip Exercise", systemImage: isSkipped ? "arrow.uturn.backward" : "forward.end")
+                    Label(isSkipped ? "Undo Skip" : "Skip", systemImage: isSkipped ? "arrow.uturn.backward" : "forward.end")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.large)
+                .controlSize(.regular)
+                .padding(.top, 8)
+
+                Text("Not medical advice — stop for pain or dizziness.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 6)
+                    .padding(.bottom, 20)
             }
             .padding(.horizontal, 18)
-            .padding(.bottom, 36)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .background(Color(.systemBackground))
     }
-}
 
-private struct PrescriptionBlock: View {
-    let exercise: WorkoutExercise
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Prescription", systemImage: "list.clipboard")
-                .font(.headline)
-
-            HStack(spacing: 10) {
-                MetricPill(title: "Sets", value: "\(exercise.targetSets)")
-                MetricPill(title: "Reps", value: exercise.targetReps)
-                MetricPill(title: "Muscle", value: exercise.catalogItem.muscle.displayName)
-                MetricPill(title: "Rest", value: "\(exercise.restSeconds)s")
-            }
-        }
+    private var prescriptionLine: String {
+        "\(exercise.targetSets)× · \(exercise.targetReps) · \(exercise.restSeconds)s rest"
     }
-}
 
-private struct MetricPill: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Text(value)
-                .font(.headline.monospacedDigit())
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(title)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 58)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-}
-
-private struct NotesBlock: View {
-    let title: String
-    let systemImage: String
-    let text: String?
-
-    var body: some View {
-        if let text, !text.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Label(title, systemImage: systemImage)
-                    .font(.headline)
-                Text(text)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
+    private var primaryNote: String? {
+        if let c = exercise.coachingNote, !c.isEmpty { return c }
+        return exercise.notes
     }
 }
 
@@ -297,54 +364,52 @@ private struct RestTimerBlock: View {
     var body: some View {
         HStack {
             Label(restText, systemImage: "timer")
-                .font(.headline.monospacedDigit())
+                .font(.subheadline.weight(.semibold).monospacedDigit())
             Spacer()
-            Button("Start Rest", action: onStartRest)
+            Button("Rest", action: onStartRest)
                 .buttonStyle(.bordered)
+                .controlSize(.small)
         }
-        .padding(12)
+        .padding(10)
         .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var restText: String {
         if let restRemaining {
-            return "\(restRemaining)s rest"
+            return "\(restRemaining)s"
         }
-        return "\(restSeconds)s planned rest"
+        return "\(restSeconds)s"
     }
 }
 
-private struct LoggingBlock: View {
+private struct CompactLoggingBlock: View {
     @Binding var draftSet: DraftLoggedSet
     let loggedSets: [LoggedSet]
     let onLogSet: () -> Void
     let onDeleteSet: (LoggedSet) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Optional logging", systemImage: "square.and.pencil")
-                .font(.headline)
-
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
                 NumberField(title: "Reps", value: $draftSet.reps)
                 DecimalField(title: "Kg", value: $draftSet.weightKilograms)
                 NumberField(title: "RPE", value: $draftSet.perceivedExertion)
+
+                Button(action: onLogSet) {
+                    Image(systemName: "plus.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(draftSet.isEmpty)
+                .accessibilityLabel("Log set")
             }
 
-            Button(action: onLogSet) {
-                Label("Log Set", systemImage: "plus.circle.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(draftSet.isEmpty)
-
-            ForEach(loggedSets) { set in
+            ForEach(loggedSets.prefix(4)) { set in
                 HStack {
-                    Text("Set \(set.setNumber)")
-                        .font(.subheadline.weight(.semibold))
+                    Text("#\(set.setNumber)")
+                        .font(.caption.weight(.semibold))
                     Spacer()
                     Text(set.summary)
-                        .font(.subheadline.monospacedDigit())
+                        .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                     Button(role: .destructive) {
                         onDeleteSet(set)
@@ -352,6 +417,7 @@ private struct LoggingBlock: View {
                         Image(systemName: "trash")
                     }
                     .buttonStyle(.borderless)
+                    .font(.caption)
                 }
             }
         }
@@ -366,6 +432,7 @@ private struct NumberField: View {
         TextField(title, value: $value, format: .number)
             .keyboardType(.numberPad)
             .textFieldStyle(.roundedBorder)
+            .frame(maxWidth: 68)
     }
 }
 
@@ -377,6 +444,7 @@ private struct DecimalField: View {
         TextField(title, value: $value, format: .number)
             .keyboardType(.decimalPad)
             .textFieldStyle(.roundedBorder)
+            .frame(maxWidth: 68)
     }
 }
 
@@ -442,14 +510,10 @@ private extension LoggedSet {
     }
 }
 
-private extension String {
-    var displayName: String {
-        replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-            .capitalized
-    }
+private enum WorkoutScrollTarget: Hashable {
+    case overview
 }
 
 #Preview {
-    WorkoutModeView(workout: .sample)
+    WorkoutModeView(workout: .constant(.sample))
 }
