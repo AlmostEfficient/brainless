@@ -24,61 +24,75 @@ struct WorkoutModeView: View {
     var body: some View {
         GeometryReader { geo in
             let pageHeight = geo.size.height
-            ZStack(alignment: .top) {
-                if workout.exercises.isEmpty {
-                    ContentUnavailableView("No Exercises", systemImage: "figure.strengthtraining.traditional")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical) {
-                            VStack(spacing: 0) {
-                                OverviewPage(
-                                    workout: workout,
-                                    isRegenerating: isRegenerating,
-                                    regenerationGuidance: $regenerationGuidance,
-                                    onRegenerate: { onRegenerate(regenerationGuidance) },
-                                    onStart: {
-                                        if let firstID = workout.exercises.first?.id {
-                                            withAnimation(.easeInOut(duration: 0.35)) {
-                                                proxy.scrollTo(firstID, anchor: .top)
+            TabView(selection: $currentTab) {
+                ZStack {
+                    if workout.exercises.isEmpty {
+                        ContentUnavailableView("No Exercises", systemImage: "figure.strengthtraining.traditional")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ScrollViewReader { proxy in
+                            ScrollView(.vertical) {
+                                VStack(spacing: 0) {
+                                    OverviewPage(
+                                        workout: workout,
+                                        isRegenerating: isRegenerating,
+                                        regenerationGuidance: $regenerationGuidance,
+                                        onRegenerate: { onRegenerate(regenerationGuidance) },
+                                        onStart: {
+                                            if let firstID = workout.exercises.first?.id {
+                                                withAnimation(.easeInOut(duration: 0.35)) {
+                                                    proxy.scrollTo(firstID, anchor: .top)
+                                                }
                                             }
-                                        }
-                                    }
-                                )
-                                .frame(width: geo.size.width, height: pageHeight)
-                                .id(WorkoutScrollTarget.overview)
-
-                                ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
-                                    ExercisePage(
-                                        exercise: exercise,
-                                        assetURLBuilder: assetURLBuilder,
-                                        position: index + 1,
-                                        total: workout.exercises.count,
-                                        isSkipped: skippedExerciseIDs.contains(exercise.id),
-                                        loggedSets: loggedSetsByExercise[exercise.id, default: []],
-                                        restRemaining: restRemaining,
-                                        onLogSet: { logSet(for: exercise, draft: $0) },
-                                        onDeleteSet: { deleteSet($0, from: exercise) },
-                                        onSkip: { skip(exercise, scrollProxy: proxy) },
-                                        onStartRest: { startRest(seconds: exercise.restSeconds) }
+                                        },
+                                        onDiscard: onDiscard
                                     )
                                     .frame(width: geo.size.width, height: pageHeight)
-                                    .id(exercise.id)
+                                    .id(WorkoutScrollTarget.overview)
+
+                                    ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
+                                        ExercisePage(
+                                            exercise: exercise,
+                                            assetURLBuilder: assetURLBuilder,
+                                            position: index + 1,
+                                            total: workout.exercises.count,
+                                            isSkipped: skippedExerciseIDs.contains(exercise.id),
+                                            loggedSets: loggedSetsByExercise[exercise.id, default: []],
+                                            restRemaining: restRemaining,
+                                            onLogSet: { logSet(for: exercise, draft: $0) },
+                                            onDeleteSet: { deleteSet($0, from: exercise) },
+                                            onSkip: { skip(exercise, scrollProxy: proxy) },
+                                            onStartRest: { startRest(seconds: exercise.restSeconds) },
+                                            onFinish: { isFinishSheetPresented = true }
+                                        )
+                                        .frame(width: geo.size.width, height: pageHeight)
+                                        .id(exercise.id)
+                                    }
                                 }
+                                .scrollTargetLayout()
                             }
-                            .scrollTargetLayout()
+                            .scrollTargetBehavior(.paging)
+                            .scrollIndicators(.hidden)
+                            .scrollBounceBehavior(.basedOnSize)
+                            .ignoresSafeArea(edges: .bottom)
                         }
-                        .scrollTargetBehavior(.paging)
-                        .scrollIndicators(.hidden)
-                        .scrollBounceBehavior(.basedOnSize)
-                        .ignoresSafeArea(edges: .bottom)
                     }
                 }
+                .tag(WorkoutHorizontalTab.exercises)
 
-                header
+                WorkoutManagementView(
+                    workout: workout,
+                    onFinish: { isFinishSheetPresented = true },
+                    isRegenerating: isRegenerating,
+                    regenerationGuidance: $regenerationGuidance,
+                    onRegenerate: { onRegenerate(regenerationGuidance) },
+                    onDismiss: { currentTab = .exercises }
+                )
+                .tag(WorkoutHorizontalTab.management)
             }
+            .tabViewStyle(.page(indexDisplayMode: .never))
         }
-        .background(Color(.systemBackground))
+        .background(BrainlessTheme.bg.ignoresSafeArea())
         .onChange(of: workout.id) { _, _ in
             startedAt = Date()
             skippedExerciseIDs = []
@@ -106,38 +120,6 @@ struct WorkoutModeView: View {
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
         }
-    }
-
-    private var header: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(workout.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                Text(headerDetail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            Button {
-                isFinishSheetPresented = true
-            } label: {
-                Label("Finish", systemImage: "checkmark.circle.fill")
-                    .labelStyle(.titleAndIcon)
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(.regularMaterial)
-    }
-
-    private var headerDetail: String {
-        let focus = workout.focus.prefix(2).map(\.displayName).joined(separator: ", ")
-        return focus.isEmpty ? "\(workout.estimatedDurationMinutes) min" : "\(workout.estimatedDurationMinutes) min • \(focus)"
     }
 
     private var restRemaining: Int? {
@@ -201,113 +183,238 @@ struct WorkoutModeView: View {
     }
 }
 
+// MARK: - OverviewPage
+
 private struct OverviewPage: View {
     let workout: GeneratedWorkout
     let isRegenerating: Bool
     @Binding var regenerationGuidance: String
     let onRegenerate: () -> Void
     let onStart: () -> Void
+    let onDiscard: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            Spacer(minLength: 56)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                topChrome
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 20)
 
-            Text(workout.title)
-                .font(.title.bold())
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
-                .minimumScaleFactor(0.85)
+                overline
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 6)
 
-            Text(metaLine)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+                Text(workout.title)
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(BrainlessTheme.ink)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
 
-            if let line = workout.generationContextSummary, !line.isEmpty {
-                Text(line)
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-            }
-
-            exercisePreviewList
-
-            TextField("Change anything?", text: $regenerationGuidance, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...3)
-                .padding(12)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
-
-            Button(action: onStart) {
-                Label("Start Workout", systemImage: "play.fill")
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-
-            Button(action: onRegenerate) {
-                HStack(spacing: 8) {
-                    if isRegenerating {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    Text(isRegenerating ? "Regenerating…" : "Regenerate")
-                        .fontWeight(.semibold)
+                if let ctx = workout.generationContextSummary, !ctx.isEmpty {
+                    contextBlock(ctx)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 20)
                 }
-                .frame(maxWidth: .infinity)
+
+                statsStrip
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+
+                exerciseList
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 28)
+
+                bottomBar
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 32)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            .disabled(isRegenerating)
+        }
+        .background(BrainlessTheme.bg.ignoresSafeArea())
+    }
+
+    private var topChrome: some View {
+        HStack {
+            Button(action: onDiscard) {
+                HStack(spacing: 6) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Close")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(BrainlessTheme.inkDim)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(BrainlessTheme.bgCard, in: Capsule())
+                .overlay(Capsule().stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+            }
+            .buttonStyle(.plain)
 
             Spacer()
-            Label("Not medical advice", systemImage: "exclamationmark.shield.fill")
-                .font(.caption2)
-                .foregroundStyle(.orange.opacity(0.9))
-                .padding(.bottom, 28)
+
+            Text("PREVIEW")
+                .font(.system(size: 11, design: .monospaced))
+                .tracking(1.2)
+                .foregroundStyle(BrainlessTheme.inkFaint)
+
+            Spacer()
+
+            Button {
+            } label: {
+                Text("···")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(BrainlessTheme.inkDim)
+                    .frame(width: 36, height: 36)
+                    .background(BrainlessTheme.bgCard, in: Circle())
+                    .overlay(Circle().stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+            }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
     }
 
-    private var metaLine: String {
-        "\(workout.exercises.count) moves · \(workout.estimatedDurationMinutes) min · \(workout.intensity)"
+    private var overline: some View {
+        Text("\(workout.intensity.uppercased()) · \(workout.exercises.count) EXERCISES")
+            .font(.system(size: 11, design: .monospaced))
+            .tracking(1.0)
+            .foregroundStyle(BrainlessTheme.accent)
     }
 
-    private var exercisePreviewList: some View {
+    private func contextBlock(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Rectangle()
+                .fill(BrainlessTheme.accent)
+                .frame(width: 3)
+                .cornerRadius(2)
+            Text(text)
+                .font(.system(size: 13))
+                .foregroundStyle(BrainlessTheme.inkDim)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .background(BrainlessTheme.accentSoft, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.accent.opacity(0.15), lineWidth: 0.5))
+    }
+
+    private var statsStrip: some View {
+        HStack(spacing: 0) {
+            statItem(value: "\(workout.estimatedDurationMinutes)", label: "MIN")
+            statDivider
+            statItem(value: "\(workout.exercises.count)", label: "EXERCISES")
+            statDivider
+            statItem(value: workout.intensity.uppercased().prefix(3).description, label: "EFFORT")
+        }
+        .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+    }
+
+    private func statItem(value: String, label: String) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                .foregroundStyle(BrainlessTheme.ink)
+            Text(label)
+                .font(.system(size: 9, design: .monospaced))
+                .tracking(0.8)
+                .foregroundStyle(BrainlessTheme.inkFaint)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+    }
+
+    private var statDivider: some View {
+        Rectangle()
+            .fill(BrainlessTheme.inkHair)
+            .frame(width: 0.5)
+            .padding(.vertical, 12)
+    }
+
+    private var exerciseList: some View {
         VStack(spacing: 8) {
             ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("\(index + 1)")
-                        .font(.caption.weight(.bold).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, alignment: .trailing)
+                HStack(spacing: 12) {
+                    Text(String(format: "%02d", index + 1))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(BrainlessTheme.accent)
+                        .frame(width: 24, alignment: .leading)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(exercise.catalogItem.name)
-                            .font(.subheadline.weight(.semibold))
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(BrainlessTheme.ink)
                             .lineLimit(1)
                             .minimumScaleFactor(0.85)
 
-                        Text("\(exercise.targetSets)x \(exercise.targetReps) · \(exercise.catalogItem.equipment)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        Text("\(exercise.targetSets)× \(exercise.targetReps)  ·  \(exercise.restSeconds)s rest")
+                            .font(.system(size: 11))
+                            .foregroundStyle(BrainlessTheme.inkFaint)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Spacer(minLength: 8)
+
+                    Text(exercise.catalogItem.equipment.uppercased().prefix(8).description)
+                        .font(.system(size: 9, design: .monospaced))
+                        .tracking(0.5)
+                        .foregroundStyle(BrainlessTheme.inkFaint)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(BrainlessTheme.surface2, in: Capsule())
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
             }
         }
-        .frame(maxWidth: .infinity)
+    }
+
+    private var bottomBar: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                TextField("Or type changes…", text: $regenerationGuidance)
+                    .font(.system(size: 14))
+                    .foregroundStyle(BrainlessTheme.ink)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+
+                Button(action: onRegenerate) {
+                    ZStack {
+                        if isRegenerating {
+                            ProgressView().tint(BrainlessTheme.inkDim)
+                        } else {
+                            Image(systemName: "mic")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(BrainlessTheme.inkDim)
+                        }
+                    }
+                    .frame(width: 44, height: 44)
+                    .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .disabled(isRegenerating)
+            }
+
+            Button(action: onStart) {
+                HStack(spacing: 8) {
+                    Text("Start Workout")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(BrainlessTheme.accent, in: RoundedRectangle(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
+
+// MARK: - ExercisePage
 
 private struct ExercisePage: View {
     let exercise: WorkoutExercise
@@ -321,191 +428,248 @@ private struct ExercisePage: View {
     let onDeleteSet: (LoggedSet) -> Void
     let onSkip: () -> Void
     let onStartRest: () -> Void
+    let onFinish: () -> Void
 
-    @State private var draftSet = DraftLoggedSet()
+    @State private var draftWeight: Double = 20.0
+    @State private var draftReps: Int = 8
+
+    var nextSetNumber: Int { loggedSets.count + 1 }
 
     var body: some View {
         GeometryReader { geo in
-            let visualH = min(geo.size.width * 0.75, geo.size.height * 0.28)
-            VStack(alignment: .leading, spacing: 0) {
-                Spacer(minLength: 68)
+            let visualH = min(geo.size.width * 0.65, geo.size.height * 0.24)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Spacer(minLength: 56)
 
-                ExerciseVisualView(exerciseID: exercise.catalogItem.id, assetURLBuilder: assetURLBuilder)
-                    .frame(height: visualH)
-                    .frame(maxWidth: .infinity)
-
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(exercise.catalogItem.name)
-                        .font(.title2.weight(.bold))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
-                    Spacer(minLength: 8)
-                    Text("\(position)/\(total)")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    if isSkipped {
-                        Image(systemName: "forward.end.fill")
-                            .foregroundStyle(.orange)
-                    }
-                }
-                .padding(.top, 8)
-
-                Text(prescriptionLine)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .padding(.top, 2)
-
-                RestTimerBlock(restRemaining: restRemaining, restSeconds: exercise.restSeconds, onStartRest: onStartRest)
-                    .padding(.top, 6)
-
-                if let note = primaryNote, !note.isEmpty {
-                    Text(note)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .padding(.top, 4)
-                }
-
-                Spacer(minLength: 4)
-
-                CompactLoggingBlock(
-                    draftSet: $draftSet,
-                    loggedSets: loggedSets,
-                    onLogSet: {
-                        onLogSet(draftSet)
-                        draftSet = DraftLoggedSet()
-                    },
-                    onDeleteSet: onDeleteSet
-                )
-
-                Button(role: isSkipped ? .cancel : nil, action: onSkip) {
-                    Label(isSkipped ? "Undo Skip" : "Skip", systemImage: isSkipped ? "arrow.uturn.backward" : "forward.end")
+                    ExerciseVisualView(exerciseID: exercise.catalogItem.id, assetURLBuilder: assetURLBuilder)
+                        .frame(height: visualH)
                         .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-                .padding(.top, 6)
+                        .padding(.bottom, 16)
 
-                Text("Not medical advice — stop for pain or dizziness.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 4)
-                    .padding(.bottom, 16)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(String(format: "%02d / %02d", position, total))
+                                .font(.system(size: 11, design: .monospaced))
+                                .tracking(0.8)
+                                .foregroundStyle(BrainlessTheme.accent)
+
+                            Text(exercise.catalogItem.name)
+                                .font(.system(size: 24, weight: .bold))
+                                .foregroundStyle(BrainlessTheme.ink)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.8)
+                        }
+                        Spacer(minLength: 8)
+                        if isSkipped {
+                            Image(systemName: "forward.end.fill")
+                                .foregroundStyle(BrainlessTheme.accent.opacity(0.7))
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 4)
+
+                    Text(prescriptionLine)
+                        .font(.system(size: 13))
+                        .foregroundStyle(BrainlessTheme.inkFaint)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 10)
+
+                    restTimerBlock
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 14)
+
+                    if let note = primaryNote, !note.isEmpty {
+                        Text(note)
+                            .font(.system(size: 13))
+                            .foregroundStyle(BrainlessTheme.inkDim)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 14)
+                    }
+
+                    loggingCard
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 10)
+
+                    if !loggedSets.isEmpty {
+                        loggedSetsList
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 10)
+                    }
+
+                    HStack(spacing: 10) {
+                        Button(role: isSkipped ? .cancel : nil, action: onSkip) {
+                            Label(isSkipped ? "Undo Skip" : "Skip", systemImage: isSkipped ? "arrow.uturn.backward" : "forward.end")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(BrainlessTheme.inkDim)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 40)
+                                .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: onFinish) {
+                            Label("Finish", systemImage: "checkmark.circle")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(BrainlessTheme.inkDim)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 40)
+                                .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+
+                    Text("Not medical advice — stop for pain or dizziness.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(BrainlessTheme.inkFaint.opacity(0.7))
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 24)
+                }
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 18)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .background(Color(.systemBackground))
+        .background(BrainlessTheme.bg.ignoresSafeArea())
     }
 
     private var prescriptionLine: String {
-        "\(exercise.targetSets)× · \(exercise.targetReps) · \(exercise.restSeconds)s rest"
+        "\(exercise.targetSets)\u{00D7} · \(exercise.targetReps) · \(exercise.restSeconds)s rest"
     }
 
     private var primaryNote: String? {
         if let c = exercise.coachingNote, !c.isEmpty { return c }
         return exercise.notes
     }
-}
 
-private struct RestTimerBlock: View {
-    let restRemaining: Int?
-    let restSeconds: Int
-    let onStartRest: () -> Void
-
-    var body: some View {
+    private var restTimerBlock: some View {
         HStack {
-            Label(restText, systemImage: "timer")
-                .font(.subheadline.weight(.semibold).monospacedDigit())
+            Image(systemName: "timer")
+                .font(.system(size: 13))
+                .foregroundStyle(restRemaining != nil ? BrainlessTheme.accent : BrainlessTheme.inkFaint)
+            Text(restRemaining != nil ? "\(restRemaining!)s remaining" : "\(exercise.restSeconds)s rest")
+                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .foregroundStyle(restRemaining != nil ? BrainlessTheme.accent : BrainlessTheme.inkFaint)
             Spacer()
-            Button("Rest", action: onStartRest)
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+            Button("Start rest", action: onStartRest)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(BrainlessTheme.inkDim)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(BrainlessTheme.bgCard, in: Capsule())
+                .overlay(Capsule().stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+                .buttonStyle(.plain)
         }
-        .padding(10)
-        .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(12)
+        .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
     }
 
-    private var restText: String {
-        if let restRemaining {
-            return "\(restRemaining)s"
-        }
-        return "\(restSeconds)s"
-    }
-}
-
-private struct CompactLoggingBlock: View {
-    @Binding var draftSet: DraftLoggedSet
-    let loggedSets: [LoggedSet]
-    let onLogSet: () -> Void
-    let onDeleteSet: (LoggedSet) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                NumberField(title: "Reps", value: $draftSet.reps)
-                DecimalField(title: "Kg", value: $draftSet.weightKilograms)
-                NumberField(title: "RPE", value: $draftSet.perceivedExertion)
-
-                Button(action: onLogSet) {
-                    Image(systemName: "plus.circle.fill")
+    private var loggingCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(String(format: "SET %02d", nextSetNumber))
+                    .font(.system(size: 11, design: .monospaced))
+                    .tracking(1)
+                    .foregroundStyle(BrainlessTheme.accent)
+                Spacer()
+                if let last = loggedSets.last {
+                    Text("LAST: \(last.weightKilograms.map { "\($0.formatted(.number.precision(.fractionLength(0...1)))) kg" } ?? "BW") × \(last.reps)")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(BrainlessTheme.inkFaint)
+                } else {
+                    Text("TAP A NUMBER TO ADJUST")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(BrainlessTheme.inkFaint)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(draftSet.isEmpty)
-                .accessibilityLabel("Log set")
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
 
-            ForEach(loggedSets) { set in
+            WeightTuner(value: $draftWeight)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 14)
+
+            Rectangle()
+                .fill(BrainlessTheme.inkHair)
+                .frame(height: 0.5)
+                .padding(.horizontal, 16)
+
+            HStack {
+                Text("REPS")
+                    .font(.system(size: 11, design: .monospaced))
+                    .tracking(1)
+                    .foregroundStyle(BrainlessTheme.inkFaint)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 8)
+
+            RepsPicker(value: $draftReps)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 14)
+
+            Button {
+                onLogSet(DraftLoggedSet(reps: draftReps, weightKilograms: draftWeight))
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Log set")
+                        .font(.system(size: 15, weight: .semibold))
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(BrainlessTheme.accent, in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 14)
+        }
+        .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+        .shadow(color: BrainlessTheme.ink.opacity(0.04), radius: 8, x: 0, y: 2)
+    }
+
+    private var loggedSetsList: some View {
+        VStack(spacing: 6) {
+            ForEach(loggedSets.suffix(4)) { set in
                 HStack {
                     Text("#\(set.setNumber)")
-                        .font(.caption.weight(.semibold))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(BrainlessTheme.accent)
                     Spacer()
                     Text(set.summary)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12).monospacedDigit())
+                        .foregroundStyle(BrainlessTheme.inkDim)
                     Button(role: .destructive) {
                         onDeleteSet(set)
                     } label: {
                         Image(systemName: "trash")
+                            .font(.system(size: 11))
+                            .foregroundStyle(BrainlessTheme.inkFaint)
                     }
                     .buttonStyle(.borderless)
-                    .font(.caption)
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
             }
             if loggedSets.count > 4 {
-                Text("+\(loggedSets.count - 4) more")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                Text("+\(loggedSets.count - 4) more sets")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(BrainlessTheme.inkFaint)
             }
         }
     }
 }
 
-private struct NumberField: View {
-    let title: String
-    @Binding var value: Int?
-
-    var body: some View {
-        TextField(title, value: $value, format: .number)
-            .keyboardType(.numberPad)
-            .textFieldStyle(.roundedBorder)
-            .frame(maxWidth: 68)
-    }
-}
-
-private struct DecimalField: View {
-    let title: String
-    @Binding var value: Double?
-
-    var body: some View {
-        TextField(title, value: $value, format: .number)
-            .keyboardType(.decimalPad)
-            .textFieldStyle(.roundedBorder)
-            .frame(maxWidth: 68)
-    }
-}
+// MARK: - Finish Sheet
 
 private struct FinishWorkoutSheet: View {
     let loggedSetCount: Int
@@ -517,43 +681,160 @@ private struct FinishWorkoutSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Text("\(loggedSetCount) logged sets • \(skippedCount) skipped")
-                    .foregroundStyle(.secondary)
+                Text("\(loggedSetCount) logged sets · \(skippedCount) skipped")
+                    .font(.system(size: 14))
+                    .foregroundStyle(BrainlessTheme.inkFaint)
 
                 VStack(spacing: 10) {
                     Button(action: onSaveCompleted) {
                         Label("Save Completed", systemImage: "checkmark.circle.fill")
+                            .fontWeight(.semibold)
                             .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(BrainlessTheme.accent, in: RoundedRectangle(cornerRadius: 12))
+                            .foregroundStyle(.white)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.plain)
 
                     Button(action: onSavePartial) {
                         Label("Save Partial", systemImage: "tray.and.arrow.down")
+                            .fontWeight(.semibold)
                             .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+                            .foregroundStyle(BrainlessTheme.ink)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
 
                     Button(role: .destructive, action: onDiscard) {
                         Label("Discard", systemImage: "trash")
+                            .fontWeight(.semibold)
                             .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+                            .foregroundStyle(.red)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                 }
-                .controlSize(.large)
 
                 Spacer()
             }
             .padding(20)
+            .background(BrainlessTheme.bgElev.ignoresSafeArea())
             .navigationTitle("Finish")
             .navigationBarTitleDisplayMode(.large)
         }
     }
 }
 
+// MARK: - Management View
+
+private struct WorkoutManagementView: View {
+    let workout: GeneratedWorkout
+    let onFinish: () -> Void
+    let isRegenerating: Bool
+    @Binding var regenerationGuidance: String
+    let onRegenerate: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer(minLength: 40)
+
+            VStack(spacing: 4) {
+                Text(workout.title)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(BrainlessTheme.ink)
+                    .multilineTextAlignment(.center)
+
+                Text(managementDetail)
+                    .font(.system(size: 13))
+                    .foregroundStyle(BrainlessTheme.inkFaint)
+                    .multilineTextAlignment(.center)
+            }
+
+            Spacer(minLength: 16)
+
+            Button(action: onFinish) {
+                Label("Finish Workout", systemImage: "checkmark.circle.fill")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(BrainlessTheme.accent, in: RoundedRectangle(cornerRadius: 14))
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+
+            VStack(spacing: 8) {
+                TextField("Change anything?", text: $regenerationGuidance, axis: .vertical)
+                    .font(.system(size: 14))
+                    .foregroundStyle(BrainlessTheme.ink)
+                    .lineLimit(1...3)
+                    .padding(12)
+                    .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+
+                Button(action: onRegenerate) {
+                    HStack(spacing: 8) {
+                        if isRegenerating {
+                            ProgressView().tint(BrainlessTheme.ink)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        Text(isRegenerating ? "Regenerating\u{2026}" : "Regenerate")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+                    .foregroundStyle(BrainlessTheme.ink)
+                }
+                .buttonStyle(.plain)
+                .disabled(isRegenerating)
+            }
+
+            Spacer()
+
+            Button(action: onDismiss) {
+                Label("Resume Workout", systemImage: "arrow.left")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+                    .foregroundStyle(BrainlessTheme.inkDim)
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 40)
+        }
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(BrainlessTheme.bg.ignoresSafeArea())
+    }
+
+    private var managementDetail: String {
+        let focus = workout.focus.prefix(2).map(\.displayName).joined(separator: ", ")
+        let meta = "\(workout.exercises.count) moves \u{00B7} \(workout.estimatedDurationMinutes) min"
+        return focus.isEmpty ? meta : "\(meta) \u{00B7} \(focus)"
+    }
+}
+
+// MARK: - Shared types
+
 private struct DraftLoggedSet {
     var reps: Int?
     var weightKilograms: Double?
     var perceivedExertion: Int?
+
+    init(reps: Int? = nil, weightKilograms: Double? = nil, perceivedExertion: Int? = nil) {
+        self.reps = reps
+        self.weightKilograms = weightKilograms
+        self.perceivedExertion = perceivedExertion
+    }
 
     var isEmpty: Bool {
         reps == nil && weightKilograms == nil && perceivedExertion == nil
@@ -565,8 +846,13 @@ private extension LoggedSet {
         var parts: [String] = ["\(reps) reps"]
         if let weightKilograms { parts.append("\(weightKilograms.formatted(.number.precision(.fractionLength(0...1)))) kg") }
         if let perceivedExertion { parts.append("RPE \(perceivedExertion)") }
-        return parts.joined(separator: " • ")
+        return parts.joined(separator: " · ")
     }
+}
+
+private enum WorkoutHorizontalTab: Hashable {
+    case management
+    case exercises
 }
 
 private enum WorkoutScrollTarget: Hashable {

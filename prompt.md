@@ -1,9 +1,5 @@
-You are planning an iOS app from a blank SwiftUI project.
-
-Think at high effort. Do not implement code yet. Create an implementation-ready product and technical plan that I can later hand to Codex 5.5 Medium one ticket at a time.
-
 App concept:
-I am building an AI-powered fitness app that creates highly personalized workouts for users. The app is inspired by how I currently use ChatGPT/Claude for workouts: I tell the AI my body issues, goals, equipment, and how I feel today, then it generates a workout. The problem is that chat eventually loses context, quality drops, and exercises do not have visuals, so I have to Google what the movements look like.
+I am building an AI-powered fitness app that creates highly personalized workouts for users. The app is inspired by how I currently use Claude for workouts: I tell the AI my body issues, goals, equipment, and how I feel today, then it generates a workout. The problem is that chat eventually loses context, quality drops, and exercises do not have visuals, so I have to Google what the movements look like.
 
 This app is the upgrade: it stores the long-term context, lets the user steer each workout conversationally, generates workouts from that context, and presents exercises with visuals in a smooth workout mode.
 
@@ -14,9 +10,7 @@ Core user flow:
    - Posture problems
    - Muscle imbalances
    - Occupational issues such as nerd neck, anterior/posterior pelvic tilt, tight hips, etc.
-   - Optional notes from health reports or physio-style summaries
-   - This can be entered by text or audio later, but for MVP assume text input only.
-   - This information changes rarely, so it should be stored as persistent profile context.
+   - This can be entered by text or audio (STT)
 3. User configures high-level training intentions:
    - Strength
    - Hypertrophy
@@ -26,9 +20,8 @@ Core user flow:
 4. User configures workout environment:
    - Where they work out
    - Available equipment
-   - Missing equipment
-   - For MVP, use simple equipment toggles and/or text fields.
-5. User requests a workout for a specific day or intent:
+   - Missing equipment 
+5. User can enter a specific type of workout split or style they prefer:
    - Push
    - Pull
    - Legs
@@ -36,12 +29,16 @@ Core user flow:
    - Full body
    - Stretching/mobility
    - Recovery
-   - Custom free-text request
-6. User can steer the workout before generation:
+   - Custom free text
+
+The above is during onboarding. Once onboarded. Claude will give them a workout and a sketch up the next few workouts (by split based on the first recommendation)
+
+From here, every time they come back to the app, the can hit generate and it gives them a new workout, customised based on their previous workout, day of time and all other context that's available to Claude. 
+
+6. User can steer the workout before generation (via text or audio):
    - “My shoulders feel tight today”
    - “I really want to feel my core”
    - “Avoid heavy squats”
-   - “Keep it under 35 minutes”
 7. App generates a workout using:
    - Persistent user body context
    - Long-term training goals

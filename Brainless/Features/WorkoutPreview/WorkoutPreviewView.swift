@@ -5,137 +5,237 @@ struct WorkoutPreviewView: View {
     let onStart: () -> Void
     let onRegenerate: () -> Void
 
+    @State private var changeText = ""
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                focusAreas
+            VStack(alignment: .leading, spacing: 0) {
+                topChrome
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 20)
+
+                overline
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 6)
+
+                Text(workout.title)
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(BrainlessTheme.ink)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
+
+                if let ctx = workout.generationContextSummary, !ctx.isEmpty {
+                    contextBlock(ctx)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 20)
+                }
+
+                statsStrip
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+
                 exerciseList
-                safetyNote
-                actions
-            }
-            .padding(20)
-        }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("Preview")
-        .navigationBarTitleDisplayMode(.inline)
-    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 28)
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(workout.title)
-                .font(.largeTitle.bold())
-
-            Text(workout.summary)
-                .font(.body)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 10) {
-                metric("\(workout.estimatedDurationMinutes) min", systemImage: "clock")
-                metric(workout.intensity, systemImage: "bolt")
+                bottomBar
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 40)
             }
         }
+        .background(BrainlessTheme.bg.ignoresSafeArea())
+        .navigationBarHidden(true)
     }
 
-    private var focusAreas: some View {
-        FlowLayout(spacing: 8) {
-            ForEach(workout.focusAreas, id: \.self) { focusArea in
-                Text(focusArea)
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.thinMaterial, in: Capsule())
+    // MARK: - Chrome
+
+    private var topChrome: some View {
+        HStack {
+            Button {
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Back")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(BrainlessTheme.inkDim)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(BrainlessTheme.bgCard, in: Capsule())
+                .overlay(Capsule().stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
             }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Text("PREVIEW")
+                .font(.system(size: 11, design: .monospaced))
+                .tracking(1.2)
+                .foregroundStyle(BrainlessTheme.inkFaint)
+
+            Spacer()
+
+            Button {
+            } label: {
+                Text("···")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(BrainlessTheme.inkDim)
+                    .frame(width: 36, height: 36)
+                    .background(BrainlessTheme.bgCard, in: Circle())
+                    .overlay(Circle().stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+            }
+            .buttonStyle(.plain)
         }
     }
+
+    private var overline: some View {
+        Text("\(workout.intensity.uppercased()) · \(workout.exercises.count) EXERCISES")
+            .font(.system(size: 11, design: .monospaced))
+            .tracking(1.0)
+            .foregroundStyle(BrainlessTheme.accent)
+    }
+
+    private func contextBlock(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Rectangle()
+                .fill(BrainlessTheme.accent)
+                .frame(width: 3)
+                .cornerRadius(2)
+            Text(text)
+                .font(.system(size: 13))
+                .foregroundStyle(BrainlessTheme.inkDim)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .background(BrainlessTheme.accentSoft, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.accent.opacity(0.15), lineWidth: 0.5))
+    }
+
+    // MARK: - Stats
+
+    private var statsStrip: some View {
+        HStack(spacing: 0) {
+            statItem(value: "\(workout.estimatedDurationMinutes)", label: "MIN")
+            statDivider
+            statItem(value: focusStr, label: "FOCUS")
+            statDivider
+            statItem(value: "\(workout.exercises.count)", label: "EXERCISES")
+        }
+        .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+    }
+
+    private var focusStr: String {
+        workout.focus.prefix(2).map(\.displayName).joined(separator: "/")
+    }
+
+    private func statItem(value: String, label: String) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.system(size: 18, weight: .semibold).monospacedDigit())
+                .foregroundStyle(BrainlessTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(.system(size: 9, design: .monospaced))
+                .tracking(0.8)
+                .foregroundStyle(BrainlessTheme.inkFaint)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+    }
+
+    private var statDivider: some View {
+        Rectangle()
+            .fill(BrainlessTheme.inkHair)
+            .frame(width: 0.5)
+            .padding(.vertical, 12)
+    }
+
+    // MARK: - Exercise List
 
     private var exerciseList: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Exercises")
-                .font(.title3.bold())
+        VStack(spacing: 8) {
+            ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
+                HStack(spacing: 12) {
+                    Text(String(format: "%02d", index + 1))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(BrainlessTheme.accent)
+                        .frame(width: 24, alignment: .leading)
 
-            ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, workoutExercise in
-                WorkoutExerciseRow(index: index + 1, workoutExercise: workoutExercise)
-            }
-        }
-    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(exercise.catalogItem.name)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(BrainlessTheme.ink)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
 
-    private var safetyNote: some View {
-        Label {
-            Text(workout.safetyNote)
-                .font(.subheadline)
-        } icon: {
-            Image(systemName: "exclamationmark.shield")
-        }
-        .foregroundStyle(.orange)
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-    }
+                        Text("\(exercise.targetSets)× \(exercise.targetReps)  ·  \(exercise.restSeconds)s rest")
+                            .font(.system(size: 11))
+                            .foregroundStyle(BrainlessTheme.inkFaint)
+                    }
 
-    private var actions: some View {
-        VStack(spacing: 10) {
-            Button(action: onStart) {
-                Label("Start Workout", systemImage: "play.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+                    Spacer(minLength: 8)
 
-            Button(action: onRegenerate) {
-                Label("Regenerate", systemImage: "arrow.clockwise")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-        }
-    }
-
-    private func metric(_ title: String, systemImage: String) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.subheadline.weight(.semibold))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
-    }
-}
-
-private struct WorkoutExerciseRow: View {
-    let index: Int
-    let workoutExercise: WorkoutExercise
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Text("\(index)")
-                .font(.headline.monospacedDigit())
-                .foregroundStyle(.white)
-                .frame(width: 32, height: 32)
-                .background(Color.accentColor, in: Circle())
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(workoutExercise.catalogItem.name)
-                    .font(.headline)
-
-                Text("\(workoutExercise.targetSets) sets - \(workoutExercise.targetReps) - \(workoutExercise.restSeconds)s rest")
-                    .font(.subheadline.weight(.medium))
-
-                Text("\(workoutExercise.catalogItem.muscle.capitalized) - \(workoutExercise.catalogItem.equipment.capitalized)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if let notes = workoutExercise.notes {
-                    Text(notes)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Text(exercise.catalogItem.equipment.uppercased().prefix(8).description)
+                        .font(.system(size: 9, design: .monospaced))
+                        .tracking(0.5)
+                        .foregroundStyle(BrainlessTheme.inkFaint)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(BrainlessTheme.surface2, in: Capsule())
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    // MARK: - Bottom
+
+    private var bottomBar: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                TextField("Or type changes…", text: $changeText)
+                    .font(.system(size: 14))
+                    .foregroundStyle(BrainlessTheme.ink)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+
+                Button(action: onRegenerate) {
+                    Image(systemName: "mic")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(BrainlessTheme.inkDim)
+                        .frame(width: 44, height: 44)
+                        .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button(action: onStart) {
+                HStack(spacing: 8) {
+                    Text("Start Workout")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(BrainlessTheme.accent, in: RoundedRectangle(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
-
 
 #Preview {
     NavigationStack {

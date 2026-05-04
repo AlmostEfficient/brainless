@@ -25,19 +25,27 @@ struct HomeView: View {
         ))
     }
 
+    private var durationBinding: Binding<Double> {
+        Binding(
+            get: { Double(viewModel.durationMinutes) },
+            set: { viewModel.durationMinutes = Int($0) }
+        )
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    greeting
-                    controls
-                    generationActions
-                    recentHistory
+                VStack(alignment: .leading, spacing: 0) {
+                    topBar
+                    greetingSection
+                    weekStripSection
+                    sessionSection
+                    Spacer(minLength: 32)
+                    beginSection
                 }
-                .padding(20)
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Today")
+            .background(BrainlessTheme.bg.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
             .alert("Generation failed", isPresented: $viewModel.isShowingError) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -63,129 +71,305 @@ struct HomeView: View {
         }
     }
 
-    private var greeting: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(greetingText)
-                .font(.largeTitle.bold())
+    // MARK: - Top Bar
+
+    private var topBar: some View {
+        HStack {
+            ZStack {
+                Circle()
+                    .fill(BrainlessTheme.surface2)
+                    .frame(width: 36, height: 36)
+                Image(systemName: "person.fill")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(BrainlessTheme.inkDim)
+            }
+            Spacer()
+            ZStack {
+                Circle()
+                    .fill(BrainlessTheme.surface2)
+                    .frame(width: 36, height: 36)
+                Image(systemName: "gearshape")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(BrainlessTheme.inkDim)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Greeting
+
+    private var greetingSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(dateOverline)
+                .font(.system(size: 11, design: .monospaced))
+                .tracking(1.2)
+                .foregroundStyle(BrainlessTheme.inkFaint)
+
+            Text("Today is\n\(Text(viewModel.workoutType + ".").foregroundStyle(BrainlessTheme.accent))")
+                .font(.system(size: 34, weight: .bold))
+                .foregroundStyle(BrainlessTheme.ink)
+                .lineSpacing(2)
+
             if !viewModel.recentHistoryLine.isEmpty {
                 Text(viewModel.recentHistoryLine)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14))
+                    .foregroundStyle(BrainlessTheme.inkFaint)
+                    .padding(.top, 2)
             }
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 24)
     }
 
-    private var greetingText: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<12: return "Good morning."
-        case 12..<17: return "Good afternoon."
-        case 17..<21: return "Good evening."
-        default: return "Ready when you are."
-        }
+    private var dateOverline: String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "EEEE"
+        let weekday = fmt.string(from: Date()).uppercased()
+        let dayFmt = DateFormatter()
+        dayFmt.dateFormat = "MMM d"
+        let dayStr = dayFmt.string(from: Date()).uppercased()
+        return "\(weekday) · \(dayStr)"
     }
 
-    private var controls: some View {
-        VStack(spacing: 12) {
+    // MARK: - Week Strip
+
+    private var weekStripSection: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                SwipeCyclePill(
-                    options: HomeViewModel.workoutTypes,
-                    selection: $viewModel.workoutType,
-                    label: { $0 }
-                )
-                SwipeCyclePill(
-                    options: HomeViewModel.durations,
-                    selection: $viewModel.durationMinutes,
-                    label: { "\($0) min" }
-                )
-                SwipeCyclePill(
-                    options: HomeViewModel.intensities,
-                    selection: $viewModel.intensity,
-                    label: { $0 }
-                )
+                ForEach(weekDays) { day in
+                    WeekDayCard(day: day, workoutType: day.isToday ? viewModel.workoutType : nil)
+                }
             }
+            .padding(.horizontal, 20)
+        }
+        .padding(.bottom, 28)
+    }
 
+    private var weekDays: [WeekDay] {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let weekday = cal.component(.weekday, from: today)
+        let monday = cal.date(byAdding: .day, value: -(weekday - 2 + 7) % 7, to: today)!
+        let fmt = DateFormatter()
+        fmt.dateFormat = "EEE"
+        return (0..<5).map { offset in
+            let date = cal.date(byAdding: .day, value: offset, to: monday)!
+            let isToday = cal.isDate(date, inSameDayAs: today)
+            let isPast = date < today
+            return WeekDay(
+                id: offset,
+                abbreviation: fmt.string(from: date).uppercased(),
+                isToday: isToday,
+                isPast: isPast
+            )
+        }
+    }
+
+    // MARK: - Session Section
+
+    private var sessionSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("TODAY'S SESSION")
+                    .font(.system(size: 11, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundStyle(BrainlessTheme.inkFaint)
+                Spacer()
+                Button {
+                    viewModel.workoutType = HomeViewModel.workoutTypes[0]
+                    viewModel.durationMinutes = 45
+                    viewModel.intensity = "Moderate"
+                    viewModel.notes = ""
+                } label: {
+                    Text("RESET")
+                        .font(.system(size: 10, design: .monospaced))
+                        .tracking(1)
+                        .foregroundStyle(BrainlessTheme.inkFaint)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
+
+            splitPickerSection
+            durationSection
+            intensitySection
+            notesSection
+        }
+    }
+
+    private var splitPickerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("SPLIT")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(HomeViewModel.workoutTypes, id: \.self) { wt in
+                        let isOn = wt == viewModel.workoutType
+                        Button { viewModel.workoutType = wt } label: {
+                            Text(wt)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(isOn ? BrainlessTheme.bgCard : BrainlessTheme.ink)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 9)
+                                .background(
+                                    isOn ? BrainlessTheme.ink : BrainlessTheme.bgCard,
+                                    in: Capsule()
+                                )
+                                .overlay(Capsule().stroke(isOn ? BrainlessTheme.ink : BrainlessTheme.inkHair, lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .animation(.easeInOut(duration: 0.14), value: viewModel.workoutType)
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+        .padding(.bottom, 24)
+    }
+
+    private var durationSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("DURATION")
+            RulerPicker(value: durationBinding, minValue: 15, maxValue: 90, step: 5, unit: "min")
+                .padding(.horizontal, 20)
+        }
+        .padding(.bottom, 24)
+    }
+
+    private var intensitySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("INTENSITY")
+            IntensityBars(
+                value: $viewModel.intensity,
+                options: HomeViewModel.intensities
+            )
+            .padding(.horizontal, 20)
+        }
+        .padding(.bottom, 24)
+    }
+
+    private var notesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("NOTES")
             TextField(
-                "Anything specific? sore spots, energy, what you're feeling...",
+                "Sore spots, energy level, anything specific…",
                 text: $viewModel.notes,
                 axis: .vertical
             )
-            .lineLimit(2...5)
+            .lineLimit(2...4)
+            .font(.system(size: 14))
+            .foregroundStyle(BrainlessTheme.ink)
             .padding(14)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+            .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+            .padding(.horizontal, 20)
         }
+        .padding(.bottom, 28)
     }
 
-    private var generationActions: some View {
+    // MARK: - Begin
+
+    private var beginSection: some View {
         VStack(spacing: 10) {
-            generateButton
-            mockGenerateButton
-        }
-    }
-
-    private var generateButton: some View {
-        Button {
-            viewModel.generate()
-        } label: {
-            HStack(spacing: 8) {
-                if viewModel.isGenerating {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Image(systemName: "sparkles")
+            Button {
+                viewModel.generate()
+            } label: {
+                ZStack {
+                    if viewModel.isGenerating {
+                        HStack(spacing: 10) {
+                            ProgressView().tint(.white)
+                            Text("Generating…")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+                    } else {
+                        Text("Begin \u{2192}")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
                 }
-                Text(viewModel.isGenerating ? "Generating…" : "Generate Workout")
-                    .fontWeight(.semibold)
+                .frame(maxWidth: .infinity)
+                .frame(height: 56)
+                .background(BrainlessTheme.ink, in: Capsule())
             }
-            .frame(maxWidth: .infinity)
+            .buttonStyle(.plain)
+            .disabled(viewModel.isGenerating)
+
+            Text("\(viewModel.durationMinutes) MIN · \(viewModel.intensity.uppercased()) · \(viewModel.workoutType.uppercased())")
+                .font(.system(size: 11, design: .monospaced))
+                .tracking(0.8)
+                .foregroundStyle(BrainlessTheme.inkFaint)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .disabled(viewModel.isGenerating)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 40)
     }
 
-    private var mockGenerateButton: some View {
-        Button {
-            viewModel.generateMock()
-        } label: {
-            HStack(spacing: 8) {
-                if viewModel.isGeneratingMock {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(systemName: "testtube.2")
-                }
-                Text(viewModel.isGeneratingMock ? "Loading mock…" : "Use Mock Workout")
-                    .fontWeight(.semibold)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
-        .disabled(viewModel.isGenerating)
-    }
+    // MARK: - Helpers
 
-    private var recentHistory: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Recent history")
-                .font(.headline)
-
-            Text(viewModel.recentHistorySummary)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
-                .padding(12)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
-        }
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, design: .monospaced))
+            .tracking(1.2)
+            .foregroundStyle(BrainlessTheme.inkFaint)
+            .padding(.horizontal, 20)
     }
 }
+
+// MARK: - WeekDay model + card
+
+private struct WeekDay: Identifiable {
+    let id: Int
+    let abbreviation: String
+    let isToday: Bool
+    let isPast: Bool
+}
+
+private struct WeekDayCard: View {
+    let day: WeekDay
+    let workoutType: String?
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(day.abbreviation)
+                .font(.system(size: 10, design: .monospaced))
+                .tracking(0.5)
+                .foregroundStyle(day.isToday ? BrainlessTheme.accent : BrainlessTheme.inkFaint)
+
+            Text(workoutType ?? "\u{2014}")
+                .font(.system(size: 10, weight: day.isToday ? .semibold : .regular))
+                .foregroundStyle(day.isToday ? BrainlessTheme.ink : BrainlessTheme.inkFaint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Circle()
+                .strokeBorder(day.isToday ? BrainlessTheme.accent : BrainlessTheme.inkHair, lineWidth: 1)
+                .background(Circle().fill(day.isPast ? BrainlessTheme.inkHair : Color.clear))
+                .frame(width: 6, height: 6)
+        }
+        .frame(width: 72, height: 72)
+        .background(
+            day.isToday ? BrainlessTheme.bgCard : Color.clear,
+            in: RoundedRectangle(cornerRadius: 12)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(day.isToday ? BrainlessTheme.inkHairStrong : BrainlessTheme.inkHair, lineWidth: 0.5)
+        )
+        .shadow(color: day.isToday ? BrainlessTheme.ink.opacity(0.06) : .clear, radius: 8, x: 0, y: 2)
+    }
+}
+
+// MARK: - ViewModel
 
 @MainActor
 @Observable
 final class HomeViewModel {
-    static let workoutTypes = ["Full Body", "Push", "Pull", "Legs", "Upper", "Lower", "Cardio", "Mobility"]
+    static let workoutTypes = ["Push", "Pull", "Legs", "Upper", "Lower", "Full Body", "Core", "Mobility"]
     static let durations = [20, 30, 45, 60, 75, 90]
-    static let intensities = ["Easy", "Moderate", "Hard"]
+    static let intensities = ["Recovery", "Light", "Moderate", "Hard", "All-out"]
 
     var workoutType = "Full Body"
     var durationMinutes = 45

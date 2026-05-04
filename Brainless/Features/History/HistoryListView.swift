@@ -11,32 +11,208 @@ struct HistoryListView: View {
         self.historyService = historyService
     }
 
+    private var thisMonthCount: Int {
+        let cal = Calendar.current
+        let now = Date()
+        return sessions.filter {
+            let date = $0.completedAt ?? $0.startedAt ?? .distantPast
+            return cal.isDate(date, equalTo: now, toGranularity: .month)
+        }.count
+    }
+
     var body: some View {
         NavigationStack {
-            Group {
-                if isLoading {
-                    ProgressView()
-                } else if let errorMessage {
-                    ContentUnavailableView("History Unavailable", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
-                } else if sessions.isEmpty {
-                    ContentUnavailableView("No Workout History", systemImage: "clock.arrow.circlepath")
-                } else {
-                    List(sessions) { session in
-                        NavigationLink {
-                            HistoryDetailView(sessionID: session.id, historyService: historyService)
-                        } label: {
-                            HistoryRow(session: session)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    headerSection
+                    if isLoading {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                            Spacer()
                         }
+                        .padding(.top, 60)
+                    } else if let err = errorMessage {
+                        Text(err)
+                            .font(.system(size: 14))
+                            .foregroundStyle(BrainlessTheme.inkFaint)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 40)
+                    } else if sessions.isEmpty {
+                        emptyState
+                    } else {
+                        statsStripSection
+                        sessionListSection
                     }
-                    .listStyle(.insetGrouped)
                 }
             }
-            .navigationTitle("History")
+            .background(BrainlessTheme.bg.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
         }
         .task {
             loadSessions()
         }
     }
+
+    // MARK: - Sections
+
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("HISTORY")
+                .font(.system(size: 11, design: .monospaced))
+                .tracking(1.2)
+                .foregroundStyle(BrainlessTheme.inkFaint)
+
+            if sessions.isEmpty && !isLoading {
+                Text("No sessions\nrecorded yet.")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(BrainlessTheme.ink)
+                    .lineSpacing(2)
+            } else {
+                Text("\(thisMonthCount) session\(thisMonthCount == 1 ? "" : "s")\n\(Text("this month.").foregroundStyle(BrainlessTheme.accent))")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(BrainlessTheme.ink)
+                    .lineSpacing(2)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 56)
+        .padding(.bottom, 24)
+    }
+
+    private var statsStripSection: some View {
+        HStack(spacing: 0) {
+            statItem(value: "\(sessions.count)", label: "SESSIONS")
+            statDivider
+            statItem(value: totalActiveTimeStr, label: "ACTIVE")
+            statDivider
+            statItem(value: currentStreakStr, label: "STREAK")
+        }
+        .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+        .padding(.horizontal, 20)
+        .padding(.bottom, 28)
+    }
+
+    private var sessionListSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("ALL SESSIONS")
+                    .font(.system(size: 11, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundStyle(BrainlessTheme.inkFaint)
+                Spacer()
+                Button {
+                } label: {
+                    Text("FILTER")
+                        .font(.system(size: 10, design: .monospaced))
+                        .tracking(1)
+                        .foregroundStyle(BrainlessTheme.inkFaint)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(BrainlessTheme.bgCard, in: Capsule())
+                        .overlay(Capsule().stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+
+            VStack(spacing: 0) {
+                ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+                    NavigationLink {
+                        HistoryDetailView(sessionID: session.id, historyService: historyService)
+                    } label: {
+                        HistoryRow(session: session)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.plain)
+
+                    if index < sessions.count - 1 {
+                        Rectangle()
+                            .fill(BrainlessTheme.inkHair)
+                            .frame(height: 0.5)
+                            .padding(.horizontal, 20)
+                    }
+                }
+            }
+            .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+            .padding(.horizontal, 20)
+            .padding(.bottom, 40)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 36))
+                .foregroundStyle(BrainlessTheme.inkFaint)
+            Text("Complete your first workout\nto see it here.")
+                .font(.system(size: 14))
+                .foregroundStyle(BrainlessTheme.inkFaint)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
+    }
+
+    // MARK: - Stat helpers
+
+    private func statItem(value: String, label: String) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                .foregroundStyle(BrainlessTheme.ink)
+            Text(label)
+                .font(.system(size: 9, design: .monospaced))
+                .tracking(0.8)
+                .foregroundStyle(BrainlessTheme.inkFaint)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+    }
+
+    private var statDivider: some View {
+        Rectangle()
+            .fill(BrainlessTheme.inkHair)
+            .frame(width: 0.5)
+            .padding(.vertical, 12)
+    }
+
+    private var totalActiveTimeStr: String {
+        let total = sessions.compactMap { session -> Int? in
+            guard let start = session.startedAt, let end = session.completedAt else { return nil }
+            return Int(end.timeIntervalSince(start) / 60)
+        }.reduce(0, +)
+        if total >= 60 {
+            return "\(total / 60)h"
+        }
+        return "\(total)m"
+    }
+
+    private var currentStreakStr: String {
+        let cal = Calendar.current
+        var streak = 0
+        var checkDate = cal.startOfDay(for: Date())
+        let sortedDates = sessions
+            .compactMap { $0.completedAt ?? $0.startedAt }
+            .map { cal.startOfDay(for: $0) }
+            .sorted(by: >)
+
+        for date in sortedDates {
+            if date == checkDate || date == cal.date(byAdding: .day, value: -1, to: checkDate)! {
+                streak += 1
+                checkDate = date
+            } else if date < checkDate {
+                break
+            }
+        }
+        return "\(streak)d"
+    }
+
+    // MARK: - Load
 
     @MainActor
     private func loadSessions() {
@@ -51,36 +227,77 @@ struct HistoryListView: View {
     }
 }
 
+// MARK: - Row
+
 private struct HistoryRow: View {
     let session: WorkoutSession
 
+    private var vibeTag: (label: String, color: Color) {
+        switch session.status {
+        case .completed:  return ("SOLID", BrainlessTheme.accent)
+        case .inProgress: return ("PARTIAL", Color.orange)
+        case .skipped:    return ("SKIPPED", BrainlessTheme.inkFaint)
+        case .planned:    return ("PLANNED", BrainlessTheme.inkFaint)
+        }
+    }
+
+    private var sessionDate: Date {
+        session.completedAt ?? session.startedAt ?? Date()
+    }
+
+    private var durationMins: Int? {
+        guard let start = session.startedAt, let end = session.completedAt else { return nil }
+        return max(1, Int(end.timeIntervalSince(start) / 60))
+    }
+
+    private var volumeStr: String? {
+        let totalKg = session.loggedSets.compactMap(\.weightKilograms).reduce(0, +)
+        guard totalKg > 0 else { return nil }
+        return "\(Int(totalKg)) kg"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(session.workout.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer()
-                Text(session.status.displayName)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(session.status == .completed ? Color.green : Color.orange)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        (session.status == .completed ? Color.green : Color.orange).opacity(0.12),
-                        in: Capsule()
-                    )
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(session.workout.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(BrainlessTheme.ink)
+                        .lineLimit(1)
+
+                    Text(vibeTag.label)
+                        .font(.system(size: 9, design: .monospaced))
+                        .tracking(0.6)
+                        .foregroundStyle(vibeTag.color)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(vibeTag.color.opacity(0.1), in: Capsule())
+                }
+
+                HStack(spacing: 10) {
+                    metaChip(sessionDate.formatted(date: .abbreviated, time: .omitted))
+                    if let dur = durationMins {
+                        metaChip("\(dur) min")
+                    }
+                    metaChip("\(session.workout.exercises.count) ex")
+                    if let vol = volumeStr {
+                        metaChip(vol)
+                    }
+                }
             }
 
-            HStack(spacing: 12) {
-                Label((session.startedAt ?? session.completedAt ?? Date()).formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
-                Label("\(session.loggedSets.count) sets", systemImage: "checklist")
-                Label("\(session.workout.exercises.count) exercises", systemImage: "figure.strengthtraining.traditional")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(BrainlessTheme.inkFaint)
         }
-        .padding(.vertical, 6)
+    }
+
+    private func metaChip(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(BrainlessTheme.inkFaint)
     }
 }
 
