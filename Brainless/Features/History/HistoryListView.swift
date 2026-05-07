@@ -2,13 +2,15 @@ import SwiftUI
 
 struct HistoryListView: View {
     var historyService: WorkoutHistoryService
+    var wrapsInNavigationStack = true
 
     @State private var sessions: [WorkoutSession] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
 
-    init(historyService: WorkoutHistoryService) {
+    init(historyService: WorkoutHistoryService, wrapsInNavigationStack: Bool = true) {
         self.historyService = historyService
+        self.wrapsInNavigationStack = wrapsInNavigationStack
     }
 
     private var thisMonthCount: Int {
@@ -21,37 +23,48 @@ struct HistoryListView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    headerSection
-                    if isLoading {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                            Spacer()
-                        }
-                        .padding(.top, 60)
-                    } else if let err = errorMessage {
-                        Text(err)
-                            .font(.system(size: 14))
-                            .foregroundStyle(BrainlessTheme.inkFaint)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 40)
-                    } else if sessions.isEmpty {
-                        emptyState
-                    } else {
-                        statsStripSection
-                        sessionListSection
-                    }
+        Group {
+            if wrapsInNavigationStack {
+                NavigationStack {
+                    content
                 }
+            } else {
+                content
             }
-            .background(BrainlessTheme.bg.ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
         }
         .task {
             loadSessions()
         }
+    }
+
+    private var content: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                headerSection
+                if isLoading {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
+                    }
+                    .padding(.top, 60)
+                } else if let err = errorMessage {
+                    Text(err)
+                        .font(.system(size: 14))
+                        .foregroundStyle(BrainlessTheme.inkFaint)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 40)
+                } else if sessions.isEmpty {
+                    emptyState
+                } else {
+                    statsStripSection
+                    sessionListSection
+                }
+            }
+        }
+        .background(BrainlessTheme.bg.ignoresSafeArea())
+        .navigationTitle("History")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     // MARK: - Sections

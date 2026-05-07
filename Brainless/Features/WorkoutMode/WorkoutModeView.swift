@@ -13,12 +13,17 @@ struct WorkoutModeView: View {
     @State private var startedAt = Date()
     @State private var skippedExerciseIDs: Set<UUID> = []
     @State private var loggedSetsByExercise: [UUID: [LoggedSet]] = [:]
+    @State private var activeExerciseID: UUID?
+    @State private var workEndsAt: Date?
     @State private var restEndsAt: Date?
     @State private var restNow = Date()
     @State private var isFinishSheetPresented = false
     @State private var regenerationGuidance = ""
     @State private var currentTab: WorkoutHorizontalTab = .exercises
+    @State private var scrollTarget: WorkoutScrollTarget? = .overview
 
+    private let defaultWorkSeconds = 60
+    private let defaultRestSeconds = 120
     private let restTicker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -41,7 +46,7 @@ struct WorkoutModeView: View {
                                         onStart: {
                                             if let firstID = workout.exercises.first?.id {
                                                 withAnimation(.easeInOut(duration: 0.35)) {
-                                                    proxy.scrollTo(firstID, anchor: .top)
+                                                    proxy.scrollTo(WorkoutScrollTarget.exercise(firstID), anchor: .top)
                                                 }
                                             }
                                         },
@@ -58,19 +63,22 @@ struct WorkoutModeView: View {
                                             total: workout.exercises.count,
                                             isSkipped: skippedExerciseIDs.contains(exercise.id),
                                             loggedSets: loggedSetsByExercise[exercise.id, default: []],
-                                            restRemaining: restRemaining,
-                                            onLogSet: { logSet(for: exercise, draft: $0) },
+                                            timerDisplay: timerDisplay,
+                                            onLogSet: {
+                                                logSet(for: exercise, draft: $0)
+                                                startRest(for: exercise)
+                                            },
                                             onDeleteSet: { deleteSet($0, from: exercise) },
                                             onSkip: { skip(exercise, scrollProxy: proxy) },
-                                            onStartRest: { startRest(seconds: exercise.restSeconds) },
                                             onFinish: { isFinishSheetPresented = true }
                                         )
                                         .frame(width: geo.size.width, height: pageHeight)
-                                        .id(exercise.id)
+                                        .id(WorkoutScrollTarget.exercise(exercise.id))
                                     }
                                 }
                                 .scrollTargetLayout()
                             }
+                            .scrollPosition(id: $scrollTarget)
                             .scrollTargetBehavior(.paging)
                             .scrollIndicators(.hidden)
                             .scrollBounceBehavior(.basedOnSize)
@@ -97,9 +105,18 @@ struct WorkoutModeView: View {
             startedAt = Date()
             skippedExerciseIDs = []
             loggedSetsByExercise = [:]
+            activeExerciseID = nil
+            workEndsAt = nil
             restEndsAt = nil
+            scrollTarget = .overview
         }
-        .onReceive(restTicker) { restNow = $0 }
+        .onChange(of: scrollTarget) { _, target in
+            handleScrollTargetChange(target)
+        }
+        .onReceive(restTicker) { now in
+            restNow = now
+            updateTimers(now: now)
+        }
         .sheet(isPresented: $isFinishSheetPresented) {
             FinishWorkoutSheet(
                 loggedSetCount: loggedSetsByExercise.values.reduce(0) { $0 + $1.count },
@@ -126,6 +143,24 @@ struct WorkoutModeView: View {
         guard let restEndsAt else { return nil }
         let remaining = Int(ceil(restEndsAt.timeIntervalSince(restNow)))
         return remaining > 0 ? remaining : nil
+    }
+
+    private var workRemaining: Int? {
+        guard let workEndsAt else { return nil }
+        let remaining = Int(ceil(workEndsAt.timeIntervalSince(restNow)))
+        return remaining > 0 ? remaining : nil
+    }
+
+    private var timerDisplay: WorkoutTimerDisplay {
+        if let restRemaining {
+            return WorkoutTimerDisplay(icon: "timer", label: "\(restRemaining)s rest", isEmphasized: true)
+        }
+
+        if let workRemaining {
+            return WorkoutTimerDisplay(icon: "figure.strengthtraining.traditional", label: "\(workRemaining)s work", isEmphasized: false)
+        }
+
+        return WorkoutTimerDisplay(icon: "timer", label: "\(defaultWorkSeconds)s work", isEmphasized: false)
     }
 
     private func logSet(for exercise: WorkoutExercise, draft: DraftLoggedSet) {
@@ -161,13 +196,57 @@ struct WorkoutModeView: View {
         guard workout.exercises.indices.contains(nextIndex) else { return }
         let nextID = workout.exercises[nextIndex].id
         withAnimation(.easeInOut(duration: 0.25)) {
-            proxy.scrollTo(nextID, anchor: .top)
+            proxy.scrollTo(WorkoutScrollTarget.exercise(nextID), anchor: .top)
         }
     }
 
-    private func startRest(seconds: Int) {
-        restNow = Date()
-        restEndsAt = Date().addingTimeInterval(TimeInterval(max(seconds, 1)))
+    private func handleScrollTargetChange(_ target: WorkoutScrollTarget?) {
+        guard case let .exercise(exerciseID) = target else {
+            activeExerciseID = nil
+            workEndsAt = nil
+            restEndsAt = nil
+            return
+        }
+
+        startExerciseTimer(for: exerciseID)
+    }
+
+    private func startExerciseTimer(for exerciseID: UUID) {
+        guard activeExerciseID != exerciseID else { return }
+
+        let now = Date()
+        activeExerciseID = exerciseID
+        restNow = now
+        workEndsAt = now.addingTimeInterval(TimeInterval(defaultWorkSeconds))
+        restEndsAt = nil
+    }
+
+    private func updateTimers(now: Date) {
+        guard let activeExerciseID else { return }
+
+        if let restEndsAt, restEndsAt <= now {
+            self.restEndsAt = nil
+            return
+        }
+
+        guard restEndsAt == nil, let workEndsAt, workEndsAt <= now else { return }
+
+        let exerciseRest = workout.exercises.first(where: { $0.id == activeExerciseID })?.restSeconds ?? defaultRestSeconds
+        let restSeconds = max(exerciseRest, defaultRestSeconds)
+        self.workEndsAt = nil
+        self.restEndsAt = now.addingTimeInterval(TimeInterval(restSeconds))
+    }
+
+    private func startRest(for exercise: WorkoutExercise) {
+        let now = Date()
+        activeExerciseID = exercise.id
+        restNow = now
+        workEndsAt = nil
+        restEndsAt = now.addingTimeInterval(TimeInterval(restDuration(for: exercise)))
+    }
+
+    private func restDuration(for exercise: WorkoutExercise) -> Int {
+        max(exercise.restSeconds, defaultRestSeconds)
     }
 
     private func buildSession(status: WorkoutCompletionStatus) -> WorkoutSession {
@@ -423,11 +502,10 @@ private struct ExercisePage: View {
     let total: Int
     let isSkipped: Bool
     let loggedSets: [LoggedSet]
-    let restRemaining: Int?
+    let timerDisplay: WorkoutTimerDisplay
     let onLogSet: (DraftLoggedSet) -> Void
     let onDeleteSet: (LoggedSet) -> Void
     let onSkip: () -> Void
-    let onStartRest: () -> Void
     let onFinish: () -> Void
 
     @State private var draftWeight: Double = 20.0
@@ -449,11 +527,6 @@ private struct ExercisePage: View {
 
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(String(format: "%02d / %02d", position, total))
-                                .font(.system(size: 11, design: .monospaced))
-                                .tracking(0.8)
-                                .foregroundStyle(BrainlessTheme.accent)
-
                             Text(exercise.catalogItem.name)
                                 .font(.system(size: 24, weight: .bold))
                                 .foregroundStyle(BrainlessTheme.ink)
@@ -496,40 +569,30 @@ private struct ExercisePage: View {
                             .padding(.horizontal, 20)
                             .padding(.bottom, 10)
                     }
-
-                    HStack(spacing: 10) {
-                        Button(role: isSkipped ? .cancel : nil, action: onSkip) {
-                            Label(isSkipped ? "Undo Skip" : "Skip", systemImage: isSkipped ? "arrow.uturn.backward" : "forward.end")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(BrainlessTheme.inkDim)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 40)
-                                .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(action: onFinish) {
-                            Label("Finish", systemImage: "checkmark.circle")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(BrainlessTheme.inkDim)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 40)
-                                .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
-
-                    Text("Not medical advice — stop for pain or dizziness.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(BrainlessTheme.inkFaint.opacity(0.7))
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 24)
                 }
                 .frame(maxWidth: .infinity)
+            }
+            .overlay(alignment: .topLeading) {
+                Text(String(format: "%02d / %02d", position, total))
+                    .font(.system(size: 11, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(BrainlessTheme.accent)
+                    .padding(.top, 22)
+                    .padding(.leading, 20)
+            }
+            .overlay(alignment: .topTrailing) {
+                Button(role: isSkipped ? .cancel : nil, action: onSkip) {
+                    Label(isSkipped ? "Unskip" : "Skip", systemImage: isSkipped ? "arrow.uturn.backward" : "forward.end")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(isSkipped ? BrainlessTheme.accent : BrainlessTheme.inkDim)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(BrainlessTheme.bgCard, in: Capsule())
+                        .overlay(Capsule().stroke(isSkipped ? BrainlessTheme.accent.opacity(0.3) : BrainlessTheme.inkHair, lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 14)
+                .padding(.trailing, 20)
             }
         }
         .background(BrainlessTheme.bg.ignoresSafeArea())
@@ -546,21 +609,13 @@ private struct ExercisePage: View {
 
     private var restTimerBlock: some View {
         HStack {
-            Image(systemName: "timer")
+            Image(systemName: timerDisplay.icon)
                 .font(.system(size: 13))
-                .foregroundStyle(restRemaining != nil ? BrainlessTheme.accent : BrainlessTheme.inkFaint)
-            Text(restRemaining != nil ? "\(restRemaining!)s remaining" : "\(exercise.restSeconds)s rest")
+                .foregroundStyle(timerDisplay.isEmphasized ? BrainlessTheme.accent : BrainlessTheme.inkFaint)
+            Text(timerDisplay.label)
                 .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                .foregroundStyle(restRemaining != nil ? BrainlessTheme.accent : BrainlessTheme.inkFaint)
+                .foregroundStyle(timerDisplay.isEmphasized ? BrainlessTheme.accent : BrainlessTheme.inkFaint)
             Spacer()
-            Button("Start rest", action: onStartRest)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(BrainlessTheme.inkDim)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(BrainlessTheme.bgCard, in: Capsule())
-                .overlay(Capsule().stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
-                .buttonStyle(.plain)
         }
         .padding(12)
         .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 10))
@@ -579,19 +634,15 @@ private struct ExercisePage: View {
                     Text("LAST: \(last.weightKilograms.map { "\($0.formatted(.number.precision(.fractionLength(0...1)))) kg" } ?? "BW") × \(last.reps)")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(BrainlessTheme.inkFaint)
-                } else {
-                    Text("TAP A NUMBER TO ADJUST")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(BrainlessTheme.inkFaint)
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
 
             WeightTuner(value: $draftWeight)
                 .padding(.horizontal, 16)
-                .padding(.bottom, 14)
+                .padding(.bottom, 8)
 
             Rectangle()
                 .fill(BrainlessTheme.inkHair)
@@ -857,6 +908,13 @@ private enum WorkoutHorizontalTab: Hashable {
 
 private enum WorkoutScrollTarget: Hashable {
     case overview
+    case exercise(UUID)
+}
+
+private struct WorkoutTimerDisplay {
+    let icon: String
+    let label: String
+    let isEmphasized: Bool
 }
 
 #Preview {

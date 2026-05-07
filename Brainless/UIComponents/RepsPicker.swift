@@ -2,72 +2,91 @@ import SwiftUI
 
 struct RepsPicker: View {
     @Binding var value: Int
-    var presets: [Int] = [4, 6, 8, 10, 12]
+    private let presets: [Int] = [4, 6, 8, 10]
 
-    var isCustom: Bool { !presets.contains(value) }
+    @State private var customValue: Int = 12
+    @State private var dragStartValue: Int?
+    @State private var lastSnapped: Int = 0
+    private let pxPerRep: CGFloat = 7
+    private let feedback = UIImpactFeedbackGenerator(style: .light)
+
+    private var isCustomSelected: Bool { !presets.contains(value) }
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 6) {
-                ForEach(presets, id: \.self) { n in
-                    let on = n == value
-                    Button(action: { value = n }) {
-                        Text(String(n))
-                            .font(.system(size: 16, weight: .semibold).monospacedDigit())
-                            .foregroundStyle(on ? BrainlessTheme.bgCard : BrainlessTheme.ink)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                            .background(on ? BrainlessTheme.ink : BrainlessTheme.bgCard,
-                                        in: RoundedRectangle(cornerRadius: 10))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(on ? BrainlessTheme.ink : BrainlessTheme.inkHair, lineWidth: 0.5)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .animation(.easeInOut(duration: 0.12), value: value)
+        HStack(spacing: 6) {
+            ForEach(presets, id: \.self) { n in
+                let on = n == value
+                Button(action: { value = n }) {
+                    Text(String(n))
+                        .font(.system(size: 16, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(on ? BrainlessTheme.bgCard : BrainlessTheme.ink)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(on ? BrainlessTheme.ink : BrainlessTheme.bgCard,
+                                    in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(on ? BrainlessTheme.ink : BrainlessTheme.inkHair, lineWidth: 0.5)
+                        )
                 }
+                .buttonStyle(.plain)
+                .animation(.easeInOut(duration: 0.12), value: value)
             }
 
-            HStack(spacing: 8) {
-                Text("CUSTOM")
-                    .font(.system(size: 11, design: .monospaced))
-                    .tracking(1)
-                    .foregroundStyle(BrainlessTheme.inkFaint)
-                Spacer()
-                Button(action: { if value > 1 { value -= 1 } }) {
-                    Image(systemName: "minus")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(BrainlessTheme.inkDim)
-                        .frame(width: 28, height: 28)
-                        .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 6))
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
-                }
-                .buttonStyle(.plain)
-                Text(String(value))
-                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(BrainlessTheme.ink)
-                    .frame(minWidth: 36, alignment: .center)
-                Button(action: { value += 1 }) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(BrainlessTheme.inkDim)
-                        .frame(width: 28, height: 28)
-                        .background(BrainlessTheme.bgCard, in: RoundedRectangle(cornerRadius: 6))
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 44)
-            .background(isCustom ? BrainlessTheme.bgCard : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(isCustom ? BrainlessTheme.inkHairStrong : BrainlessTheme.inkHair, lineWidth: 0.5)
-            )
-            .animation(.easeInOut(duration: 0.12), value: isCustom)
+            customDrumPicker
         }
+    }
+
+    private var customDrumPicker: some View {
+        let isOn = isCustomSelected
+        let displayed = isOn ? value : customValue
+
+        return ZStack {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isOn ? BrainlessTheme.ink : BrainlessTheme.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(isOn ? BrainlessTheme.ink : BrainlessTheme.inkHair, lineWidth: 0.5)
+                )
+
+            VStack(spacing: 2) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(isOn ? Color.white.opacity(0.5) : BrainlessTheme.inkFaint)
+                Text(String(displayed))
+                    .font(.system(size: 16, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(isOn ? BrainlessTheme.bgCard : BrainlessTheme.ink)
+                    .contentTransition(.numericText())
+                    .animation(.easeInOut(duration: 0.08), value: displayed)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(isOn ? Color.white.opacity(0.5) : BrainlessTheme.inkFaint)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 44)
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { g in
+                    if dragStartValue == nil {
+                        let start = isCustomSelected ? value : customValue
+                        dragStartValue = start
+                        lastSnapped = start
+                        feedback.prepare()
+                    }
+                    let start = Double(dragStartValue ?? (isCustomSelected ? value : customValue))
+                    // drag up (negative height) → increase
+                    let raw = start - Double(g.translation.height / pxPerRep)
+                    let snapped = max(1, min(99, Int(raw.rounded())))
+                    if snapped != lastSnapped {
+                        lastSnapped = snapped
+                        feedback.impactOccurred(intensity: 0.5)
+                    }
+                    customValue = snapped
+                    value = snapped
+                }
+                .onEnded { _ in dragStartValue = nil }
+        )
     }
 }
 

@@ -8,13 +8,15 @@ import SwiftUI
 
 struct SettingsView: View {
     @State private var viewModel: SettingsViewModel
+    var wrapsInNavigationStack = true
     #if DEBUG
     @Environment(\.modelContext) private var modelContext
     @State private var showingResetConfirmation = false
     #endif
 
-    init(viewModel: SettingsViewModel) {
+    init(viewModel: SettingsViewModel, wrapsInNavigationStack: Bool = true) {
         _viewModel = State(initialValue: viewModel)
+        self.wrapsInNavigationStack = wrapsInNavigationStack
     }
 
     init(
@@ -38,38 +40,48 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                bodyContextSection
-                goalsSection
-                trainingSection
-                equipmentSection
-                apiSection
-                #if DEBUG
-                debugSection
-                #endif
-            }
-            .navigationTitle("Settings")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        Task { await viewModel.save() }
-                    } label: {
-                        if viewModel.isSaving {
-                            ProgressView()
-                        } else {
-                            Text("Save")
-                        }
-                    }
-                    .disabled(!viewModel.canSave || viewModel.isSaving)
+        Group {
+            if wrapsInNavigationStack {
+                NavigationStack {
+                    content
                 }
+            } else {
+                content
             }
-            .task { await viewModel.load() }
-            .alert("Settings error", isPresented: $viewModel.showsError) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(viewModel.errorMessage)
+        }
+    }
+
+    private var content: some View {
+        Form {
+            bodyContextSection
+            goalsSection
+            trainingSection
+            equipmentSection
+            apiSection
+            #if DEBUG
+            debugSection
+            #endif
+        }
+        .navigationTitle("Settings")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    Task { await viewModel.save() }
+                } label: {
+                    if viewModel.isSaving {
+                        ProgressView()
+                    } else {
+                        Text("Save")
+                    }
+                }
+                .disabled(!viewModel.canSave || viewModel.isSaving)
             }
+        }
+        .task { await viewModel.load() }
+        .alert("Settings error", isPresented: $viewModel.showsError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(viewModel.errorMessage)
         }
     }
 

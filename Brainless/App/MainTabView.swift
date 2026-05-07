@@ -7,35 +7,19 @@ struct MainTabView: View {
     @Query(sort: \AppSettingsRecord.updatedAt, order: .reverse) private var settingsRecords: [AppSettingsRecord]
 
     var body: some View {
-        TabView {
-            HomeView(
-                service: workoutGenerationService,
-                catalogService: exerciseCatalogService,
-                assetURLBuilder: exerciseAssetURLBuilder,
-                userProfileStore: userProfileStore,
-                trainingPreferencesStore: trainingPreferencesStore,
-                equipmentProfileStore: equipmentProfileStore,
-                historyService: historyService
+        HomeView(
+            service: workoutGenerationService,
+            catalogService: exerciseCatalogService,
+            assetURLBuilder: exerciseAssetURLBuilder,
+            userProfileStore: userProfileStore,
+            trainingPreferencesStore: trainingPreferencesStore,
+            equipmentProfileStore: equipmentProfileStore,
+            historyService: historyService,
+            settingsViewModel: SettingsViewModel(
+                loadSettings: loadSettingsSnapshot,
+                saveSettings: saveSettingsSnapshot
             )
-            .tabItem {
-                Label("Today", systemImage: "house.fill")
-            }
-
-            HistoryListView(historyService: historyService)
-                .tabItem {
-                    Label("History", systemImage: "clock.fill")
-                }
-
-            SettingsView(
-                viewModel: SettingsViewModel(
-                    loadSettings: loadSettingsSnapshot,
-                    saveSettings: saveSettingsSnapshot
-                )
-            )
-            .tabItem {
-                Label("Settings", systemImage: "gearshape.fill")
-            }
-        }
+        )
     }
 
     private var userProfileStore: UserProfileStore {

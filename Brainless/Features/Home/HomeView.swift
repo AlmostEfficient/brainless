@@ -2,6 +2,8 @@ import SwiftUI
 
 struct HomeView: View {
     @State private var viewModel: HomeViewModel
+    private let historyService: WorkoutHistoryService
+    private let settingsViewModel: SettingsViewModel
 
     init(
         service: WorkoutGenerationService,
@@ -11,8 +13,11 @@ struct HomeView: View {
         userProfileStore: UserProfileStore,
         trainingPreferencesStore: TrainingPreferencesStore,
         equipmentProfileStore: EquipmentProfileStore,
-        historyService: WorkoutHistoryService
+        historyService: WorkoutHistoryService,
+        settingsViewModel: SettingsViewModel
     ) {
+        self.historyService = historyService
+        self.settingsViewModel = settingsViewModel
         _viewModel = State(initialValue: HomeViewModel(
             service: service,
             mockService: mockService,
@@ -40,8 +45,8 @@ struct HomeView: View {
                     greetingSection
                     weekStripSection
                     sessionSection
-                    Spacer(minLength: 32)
                     beginSection
+                    notesSection
                 }
             }
             .background(BrainlessTheme.bg.ignoresSafeArea())
@@ -84,18 +89,37 @@ struct HomeView: View {
                     .foregroundStyle(BrainlessTheme.inkDim)
             }
             Spacer()
-            ZStack {
-                Circle()
-                    .fill(BrainlessTheme.surface2)
-                    .frame(width: 36, height: 36)
-                Image(systemName: "gearshape")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(BrainlessTheme.inkDim)
+            HStack(spacing: 10) {
+                topBarLink(
+                    systemName: "clock.arrow.circlepath",
+                    destination: HistoryListView(historyService: historyService, wrapsInNavigationStack: false)
+                )
+
+                topBarLink(
+                    systemName: "gearshape",
+                    destination: SettingsView(viewModel: settingsViewModel, wrapsInNavigationStack: false)
+                )
             }
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 8)
+    }
+
+    private func topBarLink<Destination: View>(systemName: String, destination: Destination) -> some View {
+        NavigationLink {
+            destination
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(BrainlessTheme.surface2)
+                    .frame(width: 36, height: 36)
+                Image(systemName: systemName)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(BrainlessTheme.inkDim)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Greeting
@@ -138,9 +162,9 @@ struct HomeView: View {
 
     private var weekStripSection: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: 12) {
                 ForEach(weekDays) { day in
-                    WeekDayCard(day: day, workoutType: day.isToday ? viewModel.workoutType : nil)
+                    WeekDayCard(day: day)
                 }
             }
             .padding(.horizontal, 20)
@@ -155,15 +179,19 @@ struct HomeView: View {
         let monday = cal.date(byAdding: .day, value: -(weekday - 2 + 7) % 7, to: today)!
         let fmt = DateFormatter()
         fmt.dateFormat = "EEE"
-        return (0..<5).map { offset in
+        let dayFmt = DateFormatter()
+        dayFmt.dateFormat = "d"
+        return (0..<7).map { offset in
             let date = cal.date(byAdding: .day, value: offset, to: monday)!
             let isToday = cal.isDate(date, inSameDayAs: today)
             let isPast = date < today
             return WeekDay(
                 id: offset,
                 abbreviation: fmt.string(from: date).uppercased(),
+                dayNumber: dayFmt.string(from: date),
                 isToday: isToday,
-                isPast: isPast
+                isPast: isPast,
+                hasWorkout: viewModel.weekWorkoutDates.contains(cal.startOfDay(for: date))
             )
         }
     }
@@ -172,62 +200,9 @@ struct HomeView: View {
 
     private var sessionSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("TODAY'S SESSION")
-                    .font(.system(size: 11, design: .monospaced))
-                    .tracking(1.2)
-                    .foregroundStyle(BrainlessTheme.inkFaint)
-                Spacer()
-                Button {
-                    viewModel.workoutType = HomeViewModel.workoutTypes[0]
-                    viewModel.durationMinutes = 45
-                    viewModel.intensity = "Moderate"
-                    viewModel.notes = ""
-                } label: {
-                    Text("RESET")
-                        .font(.system(size: 10, design: .monospaced))
-                        .tracking(1)
-                        .foregroundStyle(BrainlessTheme.inkFaint)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
-
-            splitPickerSection
             durationSection
             intensitySection
-            notesSection
         }
-    }
-
-    private var splitPickerSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("SPLIT")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(HomeViewModel.workoutTypes, id: \.self) { wt in
-                        let isOn = wt == viewModel.workoutType
-                        Button { viewModel.workoutType = wt } label: {
-                            Text(wt)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(isOn ? BrainlessTheme.bgCard : BrainlessTheme.ink)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 9)
-                                .background(
-                                    isOn ? BrainlessTheme.ink : BrainlessTheme.bgCard,
-                                    in: Capsule()
-                                )
-                                .overlay(Capsule().stroke(isOn ? BrainlessTheme.ink : BrainlessTheme.inkHair, lineWidth: 0.5))
-                        }
-                        .buttonStyle(.plain)
-                        .animation(.easeInOut(duration: 0.14), value: viewModel.workoutType)
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
-        }
-        .padding(.bottom, 24)
     }
 
     private var durationSection: some View {
@@ -267,7 +242,7 @@ struct HomeView: View {
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
             .padding(.horizontal, 20)
         }
-        .padding(.bottom, 28)
+        .padding(.bottom, 24)
     }
 
     // MARK: - Begin
@@ -302,9 +277,37 @@ struct HomeView: View {
                 .font(.system(size: 11, design: .monospaced))
                 .tracking(0.8)
                 .foregroundStyle(BrainlessTheme.inkFaint)
+
+            mockGenerateButton
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 40)
+        .padding(.bottom, 20)
+    }
+
+    private var mockGenerateButton: some View {
+        Button {
+            viewModel.generateMock()
+        } label: {
+            HStack(spacing: 8) {
+                if viewModel.isGeneratingMock {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(BrainlessTheme.inkDim)
+                } else {
+                    Image(systemName: "testtube.2")
+                        .font(.system(size: 15))
+                }
+                Text(viewModel.isGeneratingMock ? "Loading mock…" : "Use Mock Workout")
+                    .font(.system(size: 15, weight: .medium))
+            }
+            .foregroundStyle(BrainlessTheme.inkDim)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .background(BrainlessTheme.surface2, in: Capsule())
+            .overlay(Capsule().stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+        .disabled(viewModel.isGenerating)
     }
 
     // MARK: - Helpers
@@ -323,42 +326,43 @@ struct HomeView: View {
 private struct WeekDay: Identifiable {
     let id: Int
     let abbreviation: String
+    let dayNumber: String
     let isToday: Bool
     let isPast: Bool
+    let hasWorkout: Bool
 }
 
 private struct WeekDayCard: View {
     let day: WeekDay
-    let workoutType: String?
+
+    private var ringColor: Color {
+        if day.hasWorkout { return BrainlessTheme.accent }
+        if day.isToday { return BrainlessTheme.inkDim }
+        return .clear
+    }
 
     var body: some View {
         VStack(spacing: 6) {
             Text(day.abbreviation)
-                .font(.system(size: 10, design: .monospaced))
-                .tracking(0.5)
-                .foregroundStyle(day.isToday ? BrainlessTheme.accent : BrainlessTheme.inkFaint)
-
-            Text(workoutType ?? "\u{2014}")
-                .font(.system(size: 10, weight: day.isToday ? .semibold : .regular))
+                .font(.system(size: 10, weight: day.isToday ? .semibold : .regular, design: .monospaced))
                 .foregroundStyle(day.isToday ? BrainlessTheme.ink : BrainlessTheme.inkFaint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
 
-            Circle()
-                .strokeBorder(day.isToday ? BrainlessTheme.accent : BrainlessTheme.inkHair, lineWidth: 1)
-                .background(Circle().fill(day.isPast ? BrainlessTheme.inkHair : Color.clear))
-                .frame(width: 6, height: 6)
+            ZStack {
+                Circle()
+                    .strokeBorder(ringColor, lineWidth: 1.5)
+                    .frame(width: 40, height: 40)
+
+                if day.hasWorkout {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(BrainlessTheme.accent)
+                } else {
+                    Text(day.dayNumber)
+                        .font(.system(size: 15, weight: day.isToday ? .semibold : .regular).monospacedDigit())
+                        .foregroundStyle(day.isToday ? BrainlessTheme.ink : BrainlessTheme.inkFaint)
+                }
+            }
         }
-        .frame(width: 72, height: 72)
-        .background(
-            day.isToday ? BrainlessTheme.bgCard : Color.clear,
-            in: RoundedRectangle(cornerRadius: 12)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(day.isToday ? BrainlessTheme.inkHairStrong : BrainlessTheme.inkHair, lineWidth: 0.5)
-        )
-        .shadow(color: day.isToday ? BrainlessTheme.ink.opacity(0.06) : .clear, radius: 8, x: 0, y: 2)
     }
 }
 
@@ -367,7 +371,6 @@ private struct WeekDayCard: View {
 @MainActor
 @Observable
 final class HomeViewModel {
-    static let workoutTypes = ["Push", "Pull", "Legs", "Upper", "Lower", "Full Body", "Core", "Mobility"]
     static let durations = [20, 30, 45, 60, 75, 90]
     static let intensities = ["Recovery", "Light", "Moderate", "Hard", "All-out"]
 
@@ -378,6 +381,7 @@ final class HomeViewModel {
 
     var recentHistorySummary = ""
     var recentHistoryLine = ""
+    var weekWorkoutDates: Set<Date> = []
     var generatedWorkout: GeneratedWorkout?
     var isGenerating = false
     var isGeneratingMock = false
@@ -389,9 +393,9 @@ final class HomeViewModel {
     private let mockService: WorkoutGenerationService
     private let catalogService: ExerciseCatalogService
     let assetURLBuilder: ExerciseAssetURLBuilder
-    private let userProfileStore: UserProfileStore
-    private let trainingPreferencesStore: TrainingPreferencesStore
-    private let equipmentProfileStore: EquipmentProfileStore
+    let userProfileStore: UserProfileStore
+    let trainingPreferencesStore: TrainingPreferencesStore
+    let equipmentProfileStore: EquipmentProfileStore
     private let historyService: WorkoutHistoryService
     private var lastRequest: WorkoutGenerationRequest?
 
@@ -518,6 +522,8 @@ final class HomeViewModel {
             recentHistorySummary = Self.formattedHistory(summary)
             recentHistoryLine = Self.formattedOneLiner(summary)
             updateWorkoutType(from: cachedTrainingPreferences, history: summary)
+            let cal = Calendar.current
+            weekWorkoutDates = Set(summary.recentWorkouts.map { cal.startOfDay(for: $0.completedAt) })
         } catch {
             recentHistorySummary = "Recent history is unavailable."
         }
@@ -695,7 +701,11 @@ final class HomeViewModel {
         userProfileStore: HomePreviewUserProfileStore(),
         trainingPreferencesStore: HomePreviewTrainingPreferencesStore(),
         equipmentProfileStore: HomePreviewEquipmentProfileStore(),
-        historyService: HomePreviewWorkoutHistoryService()
+        historyService: HomePreviewWorkoutHistoryService(),
+        settingsViewModel: SettingsViewModel(
+            loadSettings: { .empty },
+            saveSettings: { _ in }
+        )
     )
 }
 
