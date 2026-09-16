@@ -40,15 +40,6 @@ extension WorkoutSplit {
     }
 }
 
-extension WorkoutIntensity {
-    var displayName: String {
-        switch self {
-        case .easy:     "Easy"
-        case .moderate: "Moderate"
-        case .hard:     "Hard"
-        }
-    }
-}
 
 extension SafetyPreference {
     var displayName: String {

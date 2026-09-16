@@ -14,11 +14,9 @@ struct ExerciseAssetURLBuilder {
         self.assetsBaseURL = assetsBaseURL
     }
 
-    func gifURL(for exerciseID: String) -> URL {
-        assetsBaseURL.appending(path: "exercises/gifs/\(exerciseID).gif")
-    }
-
-    func posterURL(for exerciseID: String) -> URL {
-        assetsBaseURL.appending(path: "exercises/posters/\(exerciseID).jpg")
+    func gifURL(for assetID: String?) -> URL? {
+        guard let assetID, !assetID.isEmpty,
+              assetID.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil else { return nil }
+        return assetsBaseURL.appending(path: "exercises/gifs/\(assetID).gif")
     }
 }

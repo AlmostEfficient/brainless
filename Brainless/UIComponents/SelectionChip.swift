@@ -20,9 +20,11 @@ struct SelectionChip: View {
                 }
                 Text(label)
                     .font(.subheadline.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
+            .frame(minHeight: 44)
             .foregroundStyle(isSelected ? Color.white : Color.primary)
             .background(
                 isSelected ? Color.accentColor : Color(.secondarySystemGroupedBackground),

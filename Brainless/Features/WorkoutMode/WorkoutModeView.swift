@@ -22,8 +22,6 @@ struct WorkoutModeView: View {
     @State private var currentTab: WorkoutHorizontalTab = .exercises
     @State private var scrollTarget: WorkoutScrollTarget? = .overview
 
-    private let defaultWorkSeconds = 60
-    private let defaultRestSeconds = 120
     private let restTicker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -160,7 +158,7 @@ struct WorkoutModeView: View {
             return WorkoutTimerDisplay(icon: "figure.strengthtraining.traditional", label: "\(workRemaining)s work", isEmphasized: false)
         }
 
-        return WorkoutTimerDisplay(icon: "timer", label: "\(defaultWorkSeconds)s work", isEmphasized: false)
+        return WorkoutTimerDisplay(icon: "timer", label: "Ready", isEmphasized: false)
     }
 
     private func logSet(for exercise: WorkoutExercise, draft: DraftLoggedSet) {
@@ -217,7 +215,8 @@ struct WorkoutModeView: View {
         let now = Date()
         activeExerciseID = exerciseID
         restNow = now
-        workEndsAt = now.addingTimeInterval(TimeInterval(defaultWorkSeconds))
+        workEndsAt = workout.exercises.first(where: { $0.id == exerciseID })?.durationSeconds
+            .map { now.addingTimeInterval(TimeInterval($0)) }
         restEndsAt = nil
     }
 
@@ -231,8 +230,8 @@ struct WorkoutModeView: View {
 
         guard restEndsAt == nil, let workEndsAt, workEndsAt <= now else { return }
 
-        let exerciseRest = workout.exercises.first(where: { $0.id == activeExerciseID })?.restSeconds ?? defaultRestSeconds
-        let restSeconds = max(exerciseRest, defaultRestSeconds)
+        let exerciseRest = workout.exercises.first(where: { $0.id == activeExerciseID })?.restSeconds ?? 0
+        let restSeconds = exerciseRest
         self.workEndsAt = nil
         self.restEndsAt = now.addingTimeInterval(TimeInterval(restSeconds))
     }
@@ -246,7 +245,7 @@ struct WorkoutModeView: View {
     }
 
     private func restDuration(for exercise: WorkoutExercise) -> Int {
-        max(exercise.restSeconds, defaultRestSeconds)
+        exercise.restSeconds
     }
 
     private func buildSession(status: WorkoutCompletionStatus) -> WorkoutSession {
@@ -417,7 +416,7 @@ private struct OverviewPage: View {
                         .frame(width: 24, alignment: .leading)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(exercise.catalogItem.name)
+                        Text(exercise.name)
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(BrainlessTheme.ink)
                             .lineLimit(1)
@@ -430,7 +429,7 @@ private struct OverviewPage: View {
 
                     Spacer(minLength: 8)
 
-                    Text(exercise.catalogItem.equipment.uppercased().prefix(8).description)
+                    Text(exercise.equipmentLabel.uppercased().prefix(8).description)
                         .font(.system(size: 9, design: .monospaced))
                         .tracking(0.5)
                         .foregroundStyle(BrainlessTheme.inkFaint)
@@ -520,14 +519,14 @@ private struct ExercisePage: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Spacer(minLength: 56)
 
-                    ExerciseVisualView(exerciseID: exercise.catalogItem.id, assetURLBuilder: assetURLBuilder)
+                    ExerciseVisualView(assetID: exercise.asset?.assetID, assetURLBuilder: assetURLBuilder)
                         .frame(height: visualH)
                         .frame(maxWidth: .infinity)
                         .padding(.bottom, 16)
 
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(exercise.catalogItem.name)
+                            Text(exercise.name)
                                 .font(.system(size: 24, weight: .bold))
                                 .foregroundStyle(BrainlessTheme.ink)
                                 .lineLimit(2)
@@ -603,8 +602,7 @@ private struct ExercisePage: View {
     }
 
     private var primaryNote: String? {
-        if let c = exercise.coachingNote, !c.isEmpty { return c }
-        return exercise.notes
+        exercise.executionNotes
     }
 
     private var restTimerBlock: some View {

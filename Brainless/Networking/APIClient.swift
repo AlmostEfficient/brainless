@@ -21,7 +21,7 @@ struct APIClient {
         baseURL: URL = URL(string: "https://nexus.raza.run/v1")!,
         session: URLSession = .shared,
         tokenProvider: APITokenProvider = EmptyAPITokenProvider(),
-        decoder: JSONDecoder = JSONDecoder()
+        decoder: JSONDecoder = JSONDecoder.brainless
     ) {
         self.baseURL = baseURL
         self.session = session
@@ -75,6 +75,7 @@ struct APIClient {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 100
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let encodedBody = try JSONEncoder.brainless.encode(body)

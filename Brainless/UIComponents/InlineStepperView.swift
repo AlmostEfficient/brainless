@@ -19,6 +19,7 @@ struct InlineStepperView: View {
                 Button { value -= 1 } label: {
                     Image(systemName: "minus")
                         .font(.body.weight(.semibold))
+                        .frame(minWidth: 28, minHeight: 28)
                 }
                 .buttonStyle(.bordered)
                 .disabled(value <= range.lowerBound)
@@ -30,6 +31,7 @@ struct InlineStepperView: View {
                 Button { value += 1 } label: {
                     Image(systemName: "plus")
                         .font(.body.weight(.semibold))
+                        .frame(minWidth: 28, minHeight: 28)
                 }
                 .buttonStyle(.bordered)
                 .disabled(value >= range.upperBound)

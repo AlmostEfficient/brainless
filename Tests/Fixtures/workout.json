@@ -1,0 +1,131 @@
+{
+  "workout": {
+    "title": "20-Minute Full Body Strength Workout at Home",
+    "summary": "A concise full body workout using dumbbells, bench, and bodyweight to build strength and endurance in 20 minutes. Focuses on compound movements to efficiently target major muscle groups.",
+    "focus": [
+      "fullBody"
+    ],
+    "estimatedDurationMinutes": 20,
+    "intensity": "moderate",
+    "exercises": [
+      {
+        "name": "Dumbbell Goblet Squat",
+        "muscle": "quads",
+        "equipment": [
+          "dumbbells"
+        ],
+        "targetSets": 3,
+        "targetReps": "10-12",
+        "durationSeconds": null,
+        "restSeconds": 45,
+        "instructions": "Hold a single dumbbell vertically with both hands at chest level. Stand with feet shoulder-width apart. Lower your hips back and down into a squat until your thighs are parallel to the floor. Push through your heels to stand back up to starting position.",
+        "formCues": "Keep chest upright, engage core, knees tracking over toes, and avoid letting knees collapse inward.",
+        "asset": {
+          "catalogID": "yn8yg1r",
+          "assetID": "yn8yg1r"
+        },
+        "id": "e017fc69-0f9b-4e56-a05d-37a58f03fdbd"
+      },
+      {
+        "name": "Dumbbell Bench Press",
+        "muscle": "chest",
+        "equipment": [
+          "dumbbells",
+          "bench"
+        ],
+        "targetSets": 3,
+        "targetReps": "8-10",
+        "durationSeconds": null,
+        "restSeconds": 60,
+        "instructions": "Lie flat on the bench holding a dumbbell in each hand at chest level, palms facing forward. Press the dumbbells straight up until arms are fully extended. Lower the dumbbells under control back to the starting position.",
+        "formCues": "Keep feet flat on the floor, maintain a slight arch in your lower back, wrists aligned with forearms, and avoid locking elbows at the top.",
+        "asset": {
+          "catalogID": "SpYC0Kp",
+          "assetID": "SpYC0Kp"
+        },
+        "id": "c36eab1f-cd3d-42f6-8c3b-936346504a55"
+      },
+      {
+        "name": "One-Arm Dumbbell Row (each side)",
+        "muscle": "back",
+        "equipment": [
+          "dumbbells",
+          "bench"
+        ],
+        "targetSets": 3,
+        "targetReps": "10 each side",
+        "durationSeconds": null,
+        "restSeconds": 45,
+        "instructions": "Place your left knee and left hand on the bench for support, keeping your back flat. Hold a dumbbell in your right hand with arm extended. Pull the dumbbell towards your hip by bending the elbow and retracting the shoulder blade. Lower it back down under control. Repeat then switch sides.",
+        "formCues": "Keep spine neutral, avoid rotating torso, keep elbow close to your body, and squeeze shoulder blade at the top.",
+        "asset": null,
+        "id": "8f7349d4-8b5e-4bfb-b980-b471b1d94b45"
+      },
+      {
+        "name": "Dumbbell Overhead Shoulder Press",
+        "muscle": "shoulders",
+        "equipment": [
+          "dumbbells"
+        ],
+        "targetSets": 3,
+        "targetReps": "10-12",
+        "durationSeconds": null,
+        "restSeconds": 45,
+        "instructions": "Stand or sit holding dumbbells at shoulder height with palms facing forward. Press dumbbells overhead until arms are fully extended without locking elbows. Slowly lower back down to starting position.",
+        "formCues": "Keep core tight, avoid overarching lower back, keep wrists neutral, and maintain controlled movement.",
+        "asset": null,
+        "id": "f14037cb-3d96-41d6-94ca-47f6aa4cac31"
+      },
+      {
+        "name": "Bodyweight Glute Bridge",
+        "muscle": "glutes",
+        "equipment": [
+          "bodyweight"
+        ],
+        "targetSets": 3,
+        "targetReps": "15-20",
+        "durationSeconds": null,
+        "restSeconds": 30,
+        "instructions": "Lie on your back with knees bent, feet flat on the floor hip-width apart. Push through your heels to lift hips toward the ceiling, squeezing your glutes at the top. Lower hips back to the floor with control.",
+        "formCues": "Keep thighs parallel, avoid overextending the lower back, engage core, and maintain even pressure through your feet.",
+        "asset": null,
+        "id": "40d7ab17-457f-4fa9-b2cc-e9079edb27ab"
+      },
+      {
+        "name": "Dumbbell Bicep Curl",
+        "muscle": "biceps",
+        "equipment": [
+          "dumbbells"
+        ],
+        "targetSets": 3,
+        "targetReps": "12-15",
+        "durationSeconds": null,
+        "restSeconds": 30,
+        "instructions": "Stand holding a dumbbell in each hand with arms fully extended and palms facing forward. Curl the dumbbells up by bending your elbows, keeping upper arms stationary. Lower back under control to starting position.",
+        "formCues": "Avoid swinging or using momentum, keep elbows close to torso, and engage core for stability.",
+        "asset": null,
+        "id": "32ea01c9-a79a-45d4-954f-4c1d84477551"
+      },
+      {
+        "name": "Triceps Dips on Bench",
+        "muscle": "triceps",
+        "equipment": [
+          "bench",
+          "bodyweight"
+        ],
+        "targetSets": 3,
+        "targetReps": "10-12",
+        "durationSeconds": null,
+        "restSeconds": 45,
+        "instructions": "Sit on the edge of the bench with hands gripping the edge beside your hips. Slide your hips off the bench and lower your body by bending elbows to about 90 degrees. Push back up to starting position by extending elbows.",
+        "formCues": "Keep shoulders down and away from ears, elbows pointed backward, avoid shrugging, and keep legs bent to reduce load if needed.",
+        "asset": null,
+        "id": "b002f674-0379-4285-9fac-6098b1c9f1c8"
+      }
+    ],
+    "safetyNote": "Not medical advice. Perform all movements with controlled tempo and proper form. Use weights that challenge you but do not cause pain. Stop if you experience sharp discomfort. Warm up beforehand and cool down afterwards.",
+    "generationContextSummary": "Created a balanced, efficient full body strength workout using available equipment (dumbbells, bench, bodyweight) for a 20-minute session home gym.",
+    "id": "64150b66-d770-4c29-98cb-4af392241627",
+    "generatedAt": "2026-09-16T03:51:36.516Z"
+  }
+}

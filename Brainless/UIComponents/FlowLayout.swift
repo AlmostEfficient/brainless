@@ -9,14 +9,14 @@ struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? 0
+        let maxWidth = proposal.width ?? .infinity
         var currentRowWidth: CGFloat = 0
         var currentRowHeight: CGFloat = 0
         var totalHeight: CGFloat = 0
         var widestRow: CGFloat = 0
 
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            let size = subview.sizeThatFits(ProposedViewSize(width: maxWidth.isFinite ? maxWidth : nil, height: nil))
             let proposedWidth = currentRowWidth == 0 ? size.width : currentRowWidth + spacing + size.width
 
             if proposedWidth > maxWidth, currentRowWidth > 0 {
@@ -32,7 +32,7 @@ struct FlowLayout: Layout {
 
         totalHeight += currentRowHeight
         widestRow = max(widestRow, currentRowWidth)
-        return CGSize(width: maxWidth == 0 ? widestRow : maxWidth, height: totalHeight)
+        return CGSize(width: maxWidth.isFinite ? maxWidth : widestRow, height: totalHeight)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -40,7 +40,7 @@ struct FlowLayout: Layout {
         var rowHeight: CGFloat = 0
 
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            let size = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
 
             if origin.x > bounds.minX, origin.x + size.width > bounds.maxX {
                 origin.x = bounds.minX

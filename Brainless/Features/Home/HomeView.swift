@@ -8,7 +8,6 @@ struct HomeView: View {
     init(
         service: WorkoutGenerationService,
         mockService: WorkoutGenerationService = MockWorkoutGenerationService(),
-        catalogService: ExerciseCatalogService,
         assetURLBuilder: ExerciseAssetURLBuilder = ExerciseAssetURLBuilder(),
         userProfileStore: UserProfileStore,
         trainingPreferencesStore: TrainingPreferencesStore,
@@ -21,7 +20,6 @@ struct HomeView: View {
         _viewModel = State(initialValue: HomeViewModel(
             service: service,
             mockService: mockService,
-            catalogService: catalogService,
             assetURLBuilder: assetURLBuilder,
             userProfileStore: userProfileStore,
             trainingPreferencesStore: trainingPreferencesStore,
@@ -68,6 +66,14 @@ struct HomeView: View {
                     onSaveCompleted: viewModel.saveSessionAndClose,
                     onSavePartial: viewModel.saveSessionAndClose,
                     onDiscard: { viewModel.startedWorkout = nil }
+                )
+            }
+            .fullScreenCover(item: $viewModel.startedTextWorkout) { item in
+                TextWorkoutModeView(
+                    workout: viewModel.startedTextWorkout ?? item,
+                    onRegenerate: { viewModel.regenerateTextWorkout(guidance: $0) },
+                    isRegenerating: viewModel.isGeneratingTextWorkout,
+                    onClose: { viewModel.startedTextWorkout = nil }
                 )
             }
             .onAppear {
@@ -279,6 +285,7 @@ struct HomeView: View {
                 .foregroundStyle(BrainlessTheme.inkFaint)
 
             mockGenerateButton
+            textWorkoutButton
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 20)
@@ -308,6 +315,32 @@ struct HomeView: View {
         }
         .buttonStyle(.plain)
         .disabled(viewModel.isGenerating)
+    }
+
+    private var textWorkoutButton: some View {
+        Button {
+            viewModel.generateTextWorkout()
+        } label: {
+            HStack(spacing: 8) {
+                if viewModel.isGeneratingTextWorkout {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(BrainlessTheme.inkDim)
+                } else {
+                    Image(systemName: "text.page")
+                        .font(.system(size: 15))
+                }
+                Text(viewModel.isGeneratingTextWorkout ? "Building text workout…" : "Text Workout")
+                    .font(.system(size: 15, weight: .medium))
+            }
+            .foregroundStyle(BrainlessTheme.inkDim)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .background(BrainlessTheme.bgCard, in: Capsule())
+            .overlay(Capsule().stroke(BrainlessTheme.inkHair, lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+        .disabled(viewModel.isGenerating || viewModel.isGeneratingTextWorkout)
     }
 
     // MARK: - Helpers
@@ -388,25 +421,24 @@ final class HomeViewModel {
     var isShowingError = false
     var errorMessage = ""
     var startedWorkout: GeneratedWorkout?
+    var startedTextWorkout: TextWorkoutPlan?
+    var isGeneratingTextWorkout = false
 
     private let service: WorkoutGenerationService
     private let mockService: WorkoutGenerationService
-    private let catalogService: ExerciseCatalogService
     let assetURLBuilder: ExerciseAssetURLBuilder
     let userProfileStore: UserProfileStore
     let trainingPreferencesStore: TrainingPreferencesStore
     let equipmentProfileStore: EquipmentProfileStore
     private let historyService: WorkoutHistoryService
     private var lastRequest: WorkoutGenerationRequest?
+    private var lastTextRequest: WorkoutGenerationRequest?
 
-    private var cachedBodyContext: UserBodyContext?
     private var cachedTrainingPreferences: TrainingPreferences?
-    private var cachedEquipmentProfile: EquipmentProfile?
 
     init(
         service: WorkoutGenerationService,
         mockService: WorkoutGenerationService,
-        catalogService: ExerciseCatalogService,
         assetURLBuilder: ExerciseAssetURLBuilder,
         userProfileStore: UserProfileStore,
         trainingPreferencesStore: TrainingPreferencesStore,
@@ -415,7 +447,6 @@ final class HomeViewModel {
     ) {
         self.service = service
         self.mockService = mockService
-        self.catalogService = catalogService
         self.assetURLBuilder = assetURLBuilder
         self.userProfileStore = userProfileStore
         self.trainingPreferencesStore = trainingPreferencesStore
@@ -424,14 +455,14 @@ final class HomeViewModel {
     }
 
     func generate() {
-        guard !isGenerating else { return }
+        guard !isGenerating, !isGeneratingTextWorkout else { return }
         isGenerating = true
         isShowingError = false
         errorMessage = ""
 
         Task {
             do {
-                let request = try await makeRequest()
+                let request = try makeRequest()
                 lastRequest = request
                 let workout = try await service.generateWorkout(for: request)
                 generatedWorkout = workout
@@ -444,7 +475,7 @@ final class HomeViewModel {
     }
 
     func generateMock() {
-        guard !isGenerating else { return }
+        guard !isGenerating, !isGeneratingTextWorkout else { return }
         isGenerating = true
         isGeneratingMock = true
         isShowingError = false
@@ -452,7 +483,7 @@ final class HomeViewModel {
 
         Task {
             do {
-                let request = try await makeRequest()
+                let request = try makeRequest()
                 lastRequest = request
                 let workout = try await mockService.generateWorkout(for: request)
                 generatedWorkout = workout
@@ -465,8 +496,62 @@ final class HomeViewModel {
         }
     }
 
+    func generateTextWorkout() {
+        guard !isGeneratingTextWorkout, !isGenerating else { return }
+        isGeneratingTextWorkout = true
+        isShowingError = false
+        errorMessage = ""
+
+        Task {
+            do {
+                let request = try makeRequest()
+                lastTextRequest = request
+                let workout = TextWorkoutPlan(workout: try await service.generateWorkout(for: request))
+                startedTextWorkout = workout
+            } catch {
+                show(error)
+            }
+            isGeneratingTextWorkout = false
+        }
+    }
+
+    func regenerateTextWorkout(guidance: String) {
+        guard !isGeneratingTextWorkout, !isGenerating else { return }
+        isGeneratingTextWorkout = true
+        isShowingError = false
+        errorMessage = ""
+
+        Task {
+            do {
+                var request = try lastTextRequest ?? makeRequest()
+                let trimmedGuidance = guidance.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedGuidance.isEmpty {
+                    request.messages.append(
+                        WorkoutChatMessage(
+                            role: "assistant",
+                            content: startedTextWorkout.flatMap { try? JSONEncoder.brainless.encode($0) }.map { String(decoding: $0, as: UTF8.self) } ?? "Generated workout."
+                        )
+                    )
+                    request.messages.append(WorkoutChatMessage(role: "user", content: trimmedGuidance))
+                    request.todayNotes = [request.todayNotes, "Follow-up: \(trimmedGuidance)"]
+                        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                        .joined(separator: "\n")
+                    request.clientRequestID = UUID()
+                }
+                request.messages = Array(request.messages.suffix(12))
+                request.clientRequestID = UUID()
+                lastTextRequest = request
+                let workout = TextWorkoutPlan(workout: try await service.generateWorkout(for: request))
+                startedTextWorkout = workout
+            } catch {
+                show(error)
+            }
+            isGeneratingTextWorkout = false
+        }
+    }
+
     func regenerate(guidance: String = "") {
-        guard !isGenerating else { return }
+        guard !isGenerating, !isGeneratingTextWorkout else { return }
         isGenerating = true
         isShowingError = false
         errorMessage = ""
@@ -477,15 +562,22 @@ final class HomeViewModel {
                 if let lastRequest {
                     request = lastRequest
                 } else {
-                    request = try await makeRequest()
+                    request = try makeRequest()
                 }
                 let trimmedGuidance = guidance.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmedGuidance.isEmpty {
+                    if let previous = generatedWorkout,
+                       let data = try? JSONEncoder.brainless.encode(previous) {
+                        request.messages.append(WorkoutChatMessage(role: "assistant", content: String(decoding: data, as: UTF8.self)))
+                    }
+                    request.messages.append(WorkoutChatMessage(role: "user", content: trimmedGuidance))
                     request.todayNotes = [request.todayNotes, trimmedGuidance]
                         .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                         .joined(separator: "\nRegeneration guidance: ")
                     request.clientRequestID = UUID()
                 }
+                request.messages = Array(request.messages.suffix(12))
+                request.clientRequestID = UUID()
                 lastRequest = request
                 let workout = try await service.generateWorkout(for: request)
                 generatedWorkout = workout
@@ -515,9 +607,7 @@ final class HomeViewModel {
 
     func loadRecentHistorySummary() {
         do {
-            cachedBodyContext = try userProfileStore.loadBodyContext()
             cachedTrainingPreferences = try trainingPreferencesStore.loadTrainingPreferences()
-            cachedEquipmentProfile = try equipmentProfileStore.loadEquipmentProfile()
             let summary = try historyService.historySummary(referenceDate: Date())
             recentHistorySummary = Self.formattedHistory(summary)
             recentHistoryLine = Self.formattedOneLiner(summary)
@@ -550,32 +640,11 @@ final class HomeViewModel {
         return last.contains("upper") ? "Lower" : "Upper"
     }
 
-    private func makeRequest() async throws -> WorkoutGenerationRequest {
-        let bodyContext: UserBodyContext
-        if let cachedBodyContext {
-            bodyContext = cachedBodyContext
-        } else {
-            bodyContext = try userProfileStore.loadBodyContext()
-        }
-
-        let trainingPreferences: TrainingPreferences
-        if let cachedTrainingPreferences {
-            trainingPreferences = cachedTrainingPreferences
-        } else {
-            trainingPreferences = try trainingPreferencesStore.loadTrainingPreferences()
-        }
-
-        let equipmentProfile: EquipmentProfile
-        if let cachedEquipmentProfile {
-            equipmentProfile = cachedEquipmentProfile
-        } else {
-            equipmentProfile = try equipmentProfileStore.loadEquipmentProfile()
-        }
+    private func makeRequest() throws -> WorkoutGenerationRequest {
+        let bodyContext = try userProfileStore.loadBodyContext()
+        let trainingPreferences = try trainingPreferencesStore.loadTrainingPreferences()
+        let equipmentProfile = try equipmentProfileStore.loadEquipmentProfile()
         let history = try historyService.historySummary(referenceDate: Date())
-        let catalog = try await loadCatalogCandidates(
-            trainingPreferences: trainingPreferences,
-            equipmentProfile: equipmentProfile
-        )
 
         recentHistorySummary = Self.formattedHistory(history)
         recentHistoryLine = Self.formattedOneLiner(history)
@@ -591,75 +660,8 @@ final class HomeViewModel {
             workoutIntent: intent,
             todayNotes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
             requestedDurationMinutes: durationMinutes,
-            historySummary: history,
-            exerciseCatalog: catalog,
-            recentHistory: history
+            historySummary: history
         )
-    }
-
-    private func loadCatalogCandidates(
-        trainingPreferences: TrainingPreferences,
-        equipmentProfile: EquipmentProfile
-    ) async throws -> [ExerciseCatalogItem] {
-        let equipment = equipmentProfile.availableEquipment
-            .map(\.catalogQueryValue)
-            .joined(separator: ",")
-        let preferredMuscles = preferredCatalogMuscles(from: trainingPreferences)
-            .joined(separator: ",")
-
-        var response = try await catalogService.exercises(
-            matching: ExerciseCatalogQuery(
-                muscle: preferredMuscles.isEmpty ? nil : preferredMuscles,
-                equipment: equipment.isEmpty ? nil : equipment,
-                limit: 100
-            )
-        )
-
-        if response.data.count < 12, !preferredMuscles.isEmpty {
-            response = try await catalogService.exercises(
-                matching: ExerciseCatalogQuery(
-                    equipment: equipment.isEmpty ? nil : equipment,
-                    limit: 100
-                )
-            )
-        }
-
-        let catalog = response.data.map {
-            ExerciseCatalogItem(
-                id: $0.id,
-                name: $0.name,
-                muscle: $0.muscle,
-                equipment: $0.equipment
-            )
-        }
-
-        guard !catalog.isEmpty else {
-            throw WorkoutGenerationError.missingExerciseCatalogItem
-        }
-
-        return catalog
-    }
-
-    private func preferredCatalogMuscles(from preferences: TrainingPreferences) -> [String] {
-        let selected = preferences.preferredMuscles.filter { $0 != .fullBody && $0 != .cardio }
-        if !selected.isEmpty {
-            return selected.map(\.catalogQueryValue)
-        }
-
-        switch workoutType {
-        case "Push":
-            return ["pectorals", "delts", "triceps"]
-        case "Pull":
-            return ["lats", "upper back", "biceps"]
-        case "Legs", "Lower":
-            return ["quads", "hamstrings", "glutes", "calves"]
-        case "Upper":
-            return ["pectorals", "lats", "delts", "biceps", "triceps"]
-        case "Mobility", "Cardio":
-            return []
-        default:
-            return []
-        }
     }
 
     private static func formattedOneLiner(_ summary: WorkoutHistorySummary) -> String {
@@ -695,8 +697,7 @@ final class HomeViewModel {
 
 #Preview {
     HomeView(
-        service: MockWorkoutGenerationService(delayNanoseconds: 0),
-        catalogService: MockExerciseCatalogService(),
+        service: MockWorkoutGenerationService(),
         assetURLBuilder: ExerciseAssetURLBuilder(),
         userProfileStore: HomePreviewUserProfileStore(),
         trainingPreferencesStore: HomePreviewTrainingPreferencesStore(),
@@ -744,49 +745,5 @@ private struct HomePreviewWorkoutHistoryService: WorkoutHistoryService {
                 )
             ]
         )
-    }
-}
-
-private extension EquipmentType {
-    var catalogQueryValue: String {
-        switch self {
-        case .bodyweight:
-            "body weight"
-        case .dumbbells:
-            "dumbbell"
-        case .barbell:
-            "barbell"
-        case .kettlebell:
-            "kettlebell"
-        case .resistanceBands:
-            "band"
-        case .cableMachine:
-            "cable"
-        case .machine:
-            "machine"
-        case .bench:
-            "body weight"
-        case .pullUpBar:
-            "body weight"
-        case .cardioMachine:
-            "stationary bike"
-        }
-    }
-}
-
-private extension MuscleGroup {
-    var catalogQueryValue: String {
-        switch self {
-        case .chest:
-            "pectorals"
-        case .back:
-            "lats"
-        case .shoulders:
-            "delts"
-        case .core:
-            "abs"
-        default:
-            rawValue
-        }
     }
 }

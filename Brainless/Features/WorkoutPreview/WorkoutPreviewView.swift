@@ -166,7 +166,7 @@ struct WorkoutPreviewView: View {
                         .frame(width: 24, alignment: .leading)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(exercise.catalogItem.name)
+                        Text(exercise.name)
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(BrainlessTheme.ink)
                             .lineLimit(1)
@@ -179,7 +179,7 @@ struct WorkoutPreviewView: View {
 
                     Spacer(minLength: 8)
 
-                    Text(exercise.catalogItem.equipment.uppercased().prefix(8).description)
+                    Text(exercise.equipmentLabel.uppercased().prefix(8).description)
                         .font(.system(size: 9, design: .monospaced))
                         .tracking(0.5)
                         .foregroundStyle(BrainlessTheme.inkFaint)

@@ -9,7 +9,6 @@ struct MainTabView: View {
     var body: some View {
         HomeView(
             service: workoutGenerationService,
-            catalogService: exerciseCatalogService,
             assetURLBuilder: exerciseAssetURLBuilder,
             userProfileStore: userProfileStore,
             trainingPreferencesStore: trainingPreferencesStore,
@@ -44,17 +43,13 @@ struct MainTabView: View {
 
     private var apiClient: APIClient {
         APIClient(
-            baseURL: URL(string: appSettings.backendBaseURL) ?? dependencies.backendBaseURL,
-            tokenProvider: StaticAPITokenProvider(token: appSettings.apiToken)
+            baseURL: DevelopmentConfiguration.backendBaseURL ?? URL(string: appSettings.backendBaseURL) ?? dependencies.backendBaseURL,
+            tokenProvider: StaticAPITokenProvider(token: DevelopmentConfiguration.apiTokenOverride ?? appSettings.apiToken)
         )
     }
 
     private var workoutGenerationService: WorkoutGenerationService {
         RemoteWorkoutGenerationService(apiClient: apiClient)
-    }
-
-    private var exerciseCatalogService: ExerciseCatalogService {
-        RemoteExerciseCatalogService(apiClient: apiClient)
     }
 
     private var exerciseAssetURLBuilder: ExerciseAssetURLBuilder {
@@ -84,7 +79,6 @@ struct MainTabView: View {
         settings.backendBaseURL = snapshot.backendBaseURL
         settings.assetsBaseURL = snapshot.assetsBaseURL
         settings.apiToken = snapshot.apiToken
-        settings.useRemoteWorkoutGeneration = true
 
         let record = settingsRecords.first ?? AppSettingsRecord()
         record.jsonData = try dependencies.appStateStore.makeSettingsData(settings)

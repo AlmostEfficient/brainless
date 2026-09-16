@@ -160,7 +160,7 @@ final class SwiftDataWorkoutHistoryService: WorkoutHistoryService {
     }
 
     func historySummary(referenceDate: Date = Date()) throws -> WorkoutHistorySummary {
-        let sessions = try loadSessions(limit: 10)
+        let sessions = try loadSessions()
         let completed = sessions.filter { $0.status == .completed }
         let calendar = Calendar.current
         let weekInterval = calendar.dateInterval(of: .weekOfYear, for: referenceDate)
@@ -188,7 +188,8 @@ final class SwiftDataWorkoutHistoryService: WorkoutHistoryService {
                     title: session.workout.title,
                     completedAt: completedAt,
                     durationMinutes: duration,
-                    focus: session.workout.focus
+                    focus: session.workout.focus,
+                    exercises: session.workout.exercises.map(\.name)
                 )
             }
 

@@ -22,8 +22,6 @@ extension TrainingPreferences {
         self.init(
             goals: goalsArray,
             styleNotes: draft.additionalNotes.trimmedForProfile,
-            primaryGoal: goalsArray.first ?? .generalFitness,
-            secondaryGoals: Array(goalsArray.dropFirst()),
             experience: draft.experience,
             preferredSplit: draft.preferredSplit,
             workoutsPerWeek: draft.workoutsPerWeek
@@ -39,7 +37,6 @@ extension EquipmentProfile {
         self.init(
             location: draft.location?.rawValue ?? "",
             availableEquipment: equipmentArray,
-            freeTextNotes: draft.additionalNotes.trimmedForProfile,
             notes: draft.additionalNotes.trimmedForProfile
         )
     }
@@ -56,10 +53,7 @@ extension BodyContextDraft {
 
 extension TrainingPreferencesDraft {
     init(trainingPreferences: TrainingPreferences) {
-        let allGoals = trainingPreferences.goals.isEmpty
-            ? [trainingPreferences.primaryGoal] + trainingPreferences.secondaryGoals
-            : trainingPreferences.goals
-        goals = Set(allGoals)
+        goals = Set(trainingPreferences.goals)
         experience = trainingPreferences.experience
         preferredSplit = trainingPreferences.preferredSplit
         workoutsPerWeek = trainingPreferences.workoutsPerWeek
@@ -71,8 +65,6 @@ extension EquipmentProfileDraft {
     init(equipmentProfile: EquipmentProfile) {
         location = TrainingLocation(rawValue: equipmentProfile.location)
         equipment = Set(equipmentProfile.availableEquipment)
-        additionalNotes = equipmentProfile.freeTextNotes.isEmpty
-            ? equipmentProfile.notes
-            : equipmentProfile.freeTextNotes
+        additionalNotes = equipmentProfile.notes
     }
 }

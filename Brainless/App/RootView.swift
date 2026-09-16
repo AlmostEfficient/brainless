@@ -19,24 +19,25 @@ struct RootView: View {
         }
     }
 
-    private func completeOnboarding() {
+    private func completeOnboarding() throws {
+        let record = settingsRecords.first ?? AppSettingsRecord()
+        var settings = dependencies.appStateStore.loadSettings(record)
+        settings.isOnboardingComplete = true
+        record.jsonData = try dependencies.appStateStore.makeSettingsData(settings)
+        record.updatedAt = .now
+
+        if settingsRecords.isEmpty {
+            modelContext.insert(record)
+        }
+
         do {
-            let record = settingsRecords.first ?? AppSettingsRecord()
-            var settings = dependencies.appStateStore.loadSettings(record)
-            settings.isOnboardingComplete = true
-            let data = try dependencies.appStateStore.makeSettingsData(settings)
-            record.jsonData = data
-            record.updatedAt = .now
-
-            if settingsRecords.isEmpty {
-                modelContext.insert(record)
-            }
-
             try modelContext.save()
         } catch {
-            assertionFailure("Failed to save onboarding state: \(error)")
+            modelContext.rollback()
+            throw error
         }
     }
+
 }
 
 #Preview {

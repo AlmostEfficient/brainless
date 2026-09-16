@@ -8,22 +8,22 @@
 import SwiftUI
 
 struct ExerciseVisualView: View {
-    let exerciseID: String
+    let assetID: String?
     var assetURLBuilder: ExerciseAssetURLBuilder
 
     init(
-        exerciseID: String,
+        assetID: String?,
         assetURLBuilder: ExerciseAssetURLBuilder = ExerciseAssetURLBuilder()
     ) {
-        self.exerciseID = exerciseID
+        self.assetID = assetID
         self.assetURLBuilder = assetURLBuilder
     }
 
     var body: some View {
-        AsyncImage(url: assetURLBuilder.gifURL(for: exerciseID)) { phase in
+        AsyncImage(url: assetURLBuilder.gifURL(for: assetID)) { phase in
             switch phase {
             case .empty:
-                placeholder
+                if assetURLBuilder.gifURL(for: assetID) == nil { fallback } else { placeholder }
             case .success(let image):
                 image
                     .resizable()
@@ -59,6 +59,6 @@ struct ExerciseVisualView: View {
 }
 
 #Preview {
-    ExerciseVisualView(exerciseID: "0001")
+    ExerciseVisualView(assetID: "I4hDWkc")
         .padding()
 }

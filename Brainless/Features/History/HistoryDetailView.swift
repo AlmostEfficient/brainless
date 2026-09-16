@@ -99,7 +99,7 @@ struct HistoryDetailView: View {
     }
 
     private func groupedSets(from session: WorkoutSession) -> [LoggedSetGroup] {
-        let exerciseNames = Dictionary(uniqueKeysWithValues: session.workout.exercises.map { ($0.id, $0.catalogItem.name) })
+        let exerciseNames = Dictionary(uniqueKeysWithValues: session.workout.exercises.map { ($0.id, $0.name) })
         let grouped = Dictionary(grouping: session.loggedSets) { $0.workoutExerciseID }
         return grouped.map { exerciseID, sets in
             LoggedSetGroup(

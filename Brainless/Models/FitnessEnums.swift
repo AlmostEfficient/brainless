@@ -1,13 +1,5 @@
 import Foundation
 
-enum BiologicalSex: String, Codable, CaseIterable, Identifiable {
-    case female
-    case male
-    case other
-    case preferNotToSay
-
-    var id: String { rawValue }
-}
 
 enum FitnessGoal: String, Codable, CaseIterable, Identifiable {
     case strength
@@ -71,13 +63,6 @@ enum EquipmentType: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum WorkoutIntensity: String, Codable, CaseIterable, Identifiable {
-    case easy
-    case moderate
-    case hard
-
-    var id: String { rawValue }
-}
 
 enum WorkoutCompletionStatus: String, Codable, CaseIterable, Identifiable {
     case planned
