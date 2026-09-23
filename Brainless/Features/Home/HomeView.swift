@@ -54,7 +54,7 @@ struct HomeView: View {
             } message: {
                 Text(viewModel.errorMessage)
             }
-            .fullScreenCover(item: $viewModel.startedWorkout) { item in
+            .fullScreenCover(item: $viewModel.startedWorkout, onDismiss: { viewModel.cancelGeneration() }) { item in
                 WorkoutModeView(
                     workout: Binding(
                         get: { viewModel.startedWorkout ?? item },
@@ -63,17 +63,21 @@ struct HomeView: View {
                     assetURLBuilder: viewModel.assetURLBuilder,
                     onRegenerate: { viewModel.regenerate(guidance: $0) },
                     isRegenerating: viewModel.isGenerating,
+                    isEditing: viewModel.isEditingWorkout,
                     onSaveCompleted: viewModel.saveSessionAndClose,
                     onSavePartial: viewModel.saveSessionAndClose,
-                    onDiscard: { viewModel.startedWorkout = nil }
+                    onDiscard: { viewModel.cancelGeneration(); viewModel.startedWorkout = nil }
                 )
+                .alert("Generation stopped", isPresented: $viewModel.isShowingError) {
+                    Button("OK", role: .cancel) {}
+                } message: { Text(viewModel.errorMessage) }
             }
-            .fullScreenCover(item: $viewModel.startedTextWorkout) { item in
+            .fullScreenCover(item: $viewModel.startedTextWorkout, onDismiss: { viewModel.cancelGeneration() }) { item in
                 TextWorkoutModeView(
                     workout: viewModel.startedTextWorkout ?? item,
                     onRegenerate: { viewModel.regenerateTextWorkout(guidance: $0) },
                     isRegenerating: viewModel.isGeneratingTextWorkout,
-                    onClose: { viewModel.startedTextWorkout = nil }
+                    onClose: { viewModel.cancelGeneration(); viewModel.startedTextWorkout = nil }
                 )
             }
             .onAppear {
@@ -416,6 +420,7 @@ final class HomeViewModel {
     var recentHistoryLine = ""
     var weekWorkoutDates: Set<Date> = []
     var generatedWorkout: GeneratedWorkout?
+    var isEditingWorkout = false
     var isGenerating = false
     var isGeneratingMock = false
     var isShowingError = false
@@ -433,6 +438,9 @@ final class HomeViewModel {
     private let historyService: WorkoutHistoryService
     private var lastRequest: WorkoutGenerationRequest?
     private var lastTextRequest: WorkoutGenerationRequest?
+    private var textWorkout: GeneratedWorkout?
+    private var generationTask: Task<Void, Never>?
+    private var generationToken = UUID()
 
     private var cachedTrainingPreferences: TrainingPreferences?
 
@@ -454,23 +462,67 @@ final class HomeViewModel {
         self.historyService = historyService
     }
 
-    func generate() {
+    func generate() { beginGeneration(text: false, guidance: nil) }
+
+    func cancelGeneration() {
+        generationToken = UUID()
+        generationTask?.cancel()
+        generationTask = nil
+        isEditingWorkout = false
+        isGenerating = false
+        isGeneratingTextWorkout = false
+    }
+
+    private func beginGeneration(text: Bool, guidance: String?) {
         guard !isGenerating, !isGeneratingTextWorkout else { return }
-        isGenerating = true
+        isGenerating = !text
+        isGeneratingTextWorkout = text
         isShowingError = false
         errorMessage = ""
-
-        Task {
+        let token = UUID()
+        generationToken = token
+        let previous = text ? textWorkout : generatedWorkout
+        let editing = guidance != nil && previous != nil
+        isEditingWorkout = editing && !text
+        generationTask = Task {
             do {
-                let request = try makeRequest()
-                lastRequest = request
-                let workout = try await service.generateWorkout(for: request)
-                generatedWorkout = workout
-                startedWorkout = workout
+                var request = try makeRequest()
+                request.messages = (text ? lastTextRequest : lastRequest)?.messages ?? []
+                if editing, let previous {
+                    let instruction = guidance!.trimmingCharacters(in: .whitespacesAndNewlines)
+                    request.edit = WorkoutEditRequest(workout: previous, instruction: instruction.isEmpty ? "Create a different whole session for the current context." : instruction)
+                }
+                let workout = try await service.streamWorkout(for: request) { [weak self] partial in
+                    guard let self, self.generationToken == token else { return }
+                    // Edits are applied atomically: the current session stays usable.
+                    if editing && !partial.isGenerationComplete { return }
+                    if text {
+                        self.textWorkout = partial
+                        self.startedTextWorkout = TextWorkoutPlan(workout: partial)
+                    } else {
+                        self.generatedWorkout = partial
+                        self.startedWorkout = partial
+                    }
+                }
+                guard generationToken == token else { return }
+                if let guidance, !guidance.isEmpty { request.messages.append(WorkoutChatMessage(role: "user", content: guidance)) }
+                request.edit = nil
+                request.messages = Array(request.messages.suffix(8))
+                if text { lastTextRequest = request; textWorkout = workout }
+                else { lastRequest = request; generatedWorkout = workout }
             } catch {
-                show(error)
+                guard generationToken == token else { return }
+                if !editing {
+                    if text { textWorkout?.generationStatus = .failed }
+                    else { generatedWorkout?.generationStatus = .failed; startedWorkout?.generationStatus = .failed }
+                }
+                if !(error is CancellationError) { show(error) }
             }
+            guard generationToken == token else { return }
+            isEditingWorkout = false
             isGenerating = false
+            isGeneratingTextWorkout = false
+            generationTask = nil
         }
     }
 
@@ -496,106 +548,21 @@ final class HomeViewModel {
         }
     }
 
-    func generateTextWorkout() {
-        guard !isGeneratingTextWorkout, !isGenerating else { return }
-        isGeneratingTextWorkout = true
-        isShowingError = false
-        errorMessage = ""
-
-        Task {
-            do {
-                let request = try makeRequest()
-                lastTextRequest = request
-                let workout = TextWorkoutPlan(workout: try await service.generateWorkout(for: request))
-                startedTextWorkout = workout
-            } catch {
-                show(error)
-            }
-            isGeneratingTextWorkout = false
-        }
-    }
-
-    func regenerateTextWorkout(guidance: String) {
-        guard !isGeneratingTextWorkout, !isGenerating else { return }
-        isGeneratingTextWorkout = true
-        isShowingError = false
-        errorMessage = ""
-
-        Task {
-            do {
-                var request = try lastTextRequest ?? makeRequest()
-                let trimmedGuidance = guidance.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmedGuidance.isEmpty {
-                    request.messages.append(
-                        WorkoutChatMessage(
-                            role: "assistant",
-                            content: startedTextWorkout.flatMap { try? JSONEncoder.brainless.encode($0) }.map { String(decoding: $0, as: UTF8.self) } ?? "Generated workout."
-                        )
-                    )
-                    request.messages.append(WorkoutChatMessage(role: "user", content: trimmedGuidance))
-                    request.todayNotes = [request.todayNotes, "Follow-up: \(trimmedGuidance)"]
-                        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                        .joined(separator: "\n")
-                    request.clientRequestID = UUID()
-                }
-                request.messages = Array(request.messages.suffix(12))
-                request.clientRequestID = UUID()
-                lastTextRequest = request
-                let workout = TextWorkoutPlan(workout: try await service.generateWorkout(for: request))
-                startedTextWorkout = workout
-            } catch {
-                show(error)
-            }
-            isGeneratingTextWorkout = false
-        }
-    }
-
-    func regenerate(guidance: String = "") {
-        guard !isGenerating, !isGeneratingTextWorkout else { return }
-        isGenerating = true
-        isShowingError = false
-        errorMessage = ""
-
-        Task {
-            do {
-                var request: WorkoutGenerationRequest
-                if let lastRequest {
-                    request = lastRequest
-                } else {
-                    request = try makeRequest()
-                }
-                let trimmedGuidance = guidance.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmedGuidance.isEmpty {
-                    if let previous = generatedWorkout,
-                       let data = try? JSONEncoder.brainless.encode(previous) {
-                        request.messages.append(WorkoutChatMessage(role: "assistant", content: String(decoding: data, as: UTF8.self)))
-                    }
-                    request.messages.append(WorkoutChatMessage(role: "user", content: trimmedGuidance))
-                    request.todayNotes = [request.todayNotes, trimmedGuidance]
-                        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                        .joined(separator: "\nRegeneration guidance: ")
-                    request.clientRequestID = UUID()
-                }
-                request.messages = Array(request.messages.suffix(12))
-                request.clientRequestID = UUID()
-                lastRequest = request
-                let workout = try await service.generateWorkout(for: request)
-                generatedWorkout = workout
-                if startedWorkout != nil {
-                    startedWorkout = workout
-                }
-            } catch {
-                show(error)
-            }
-            isGenerating = false
-        }
-    }
+    func generateTextWorkout() { beginGeneration(text: true, guidance: nil) }
+    func regenerateTextWorkout(guidance: String) { beginGeneration(text: true, guidance: guidance) }
+    func regenerate(guidance: String = "") { beginGeneration(text: false, guidance: guidance) }
 
     func start(_ workout: GeneratedWorkout) {
         startedWorkout = workout
     }
 
     func saveSessionAndClose(_ session: WorkoutSession) {
+        var session = session
+        if !session.workout.isGenerationComplete {
+            session.status = .inProgress
+            session.workout.generationStatus = .failed
+        }
+        cancelGeneration()
         do {
             try historyService.saveSession(session)
             startedWorkout = nil
@@ -613,7 +580,7 @@ final class HomeViewModel {
             recentHistoryLine = Self.formattedOneLiner(summary)
             updateWorkoutType(from: cachedTrainingPreferences, history: summary)
             let cal = Calendar.current
-            weekWorkoutDates = Set(summary.recentWorkouts.map { cal.startOfDay(for: $0.completedAt) })
+            weekWorkoutDates = Set(summary.recentWorkouts.filter { $0.status == .completed }.map { cal.startOfDay(for: $0.completedAt) })
         } catch {
             recentHistorySummary = "Recent history is unavailable."
         }
@@ -629,14 +596,14 @@ final class HomeViewModel {
     }
 
     private func nextPPLDay(from summary: WorkoutHistorySummary) -> String {
-        let last = summary.recentWorkouts.first?.title.lowercased() ?? ""
+        let last = summary.recentWorkouts.first(where: { $0.status == .completed })?.title.lowercased() ?? ""
         if last.contains("push") { return "Pull" }
         if last.contains("pull") { return "Legs" }
         return "Push"
     }
 
     private func nextUpperLowerDay(from summary: WorkoutHistorySummary) -> String {
-        let last = summary.recentWorkouts.first?.title.lowercased() ?? ""
+        let last = summary.recentWorkouts.first(where: { $0.status == .completed })?.title.lowercased() ?? ""
         return last.contains("upper") ? "Lower" : "Upper"
     }
 
@@ -649,17 +616,14 @@ final class HomeViewModel {
         recentHistorySummary = Self.formattedHistory(history)
         recentHistoryLine = Self.formattedOneLiner(history)
 
-        let intent = [workoutType, intensity != "Moderate" ? "\(intensity) intensity" : nil]
-            .compactMap { $0 }
-            .joined(separator: ", ")
-
         return WorkoutGenerationRequest(
             bodyContext: bodyContext,
             trainingPreferences: trainingPreferences,
             equipmentProfile: equipmentProfile,
-            workoutIntent: intent,
+            workoutIntent: workoutType,
             todayNotes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
             requestedDurationMinutes: durationMinutes,
+            requestedIntensity: SessionIntensity(rawValue: intensity) ?? .moderate,
             historySummary: history
         )
     }

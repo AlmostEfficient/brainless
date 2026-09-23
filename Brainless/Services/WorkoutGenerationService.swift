@@ -14,6 +14,15 @@ enum WorkoutGenerationError: LocalizedError, Equatable {
 
 protocol WorkoutGenerationService {
     func generateWorkout(for request: WorkoutGenerationRequest) async throws -> GeneratedWorkout
+    func streamWorkout(for request: WorkoutGenerationRequest, onUpdate: @escaping @MainActor (GeneratedWorkout) -> Void) async throws -> GeneratedWorkout
+}
+
+extension WorkoutGenerationService {
+    func streamWorkout(for request: WorkoutGenerationRequest, onUpdate: @escaping @MainActor (GeneratedWorkout) -> Void) async throws -> GeneratedWorkout {
+        let workout = try await generateWorkout(for: request)
+        await onUpdate(workout)
+        return workout
+    }
 }
 
 extension GeneratedWorkout {

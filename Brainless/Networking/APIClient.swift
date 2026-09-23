@@ -116,6 +116,49 @@ struct APIClient {
         }
     }
 
+    func stream<Body: Encodable>(_ path: String, body: Body, onEvent: (String, Data) async throws -> Void) async throws {
+        guard let url = makeURL(path: path, queryItems: []) else { throw APIError.invalidURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 100
+        request.httpBody = try JSONEncoder.brainless.encode(body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        if let token = await tokenProvider.apiToken, !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let start = Date()
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            var data = Data()
+            for try await byte in bytes { data.append(byte); if data.count > 16_384 { break } }
+            throw decodeAPIError(data: data, statusCode: http.statusCode)
+        }
+        guard http.value(forHTTPHeaderField: "Content-Type")?.contains("text/event-stream") == true else { throw APIError.invalidResponse }
+        var event = "message", lines: [String] = []
+        var lineBytes = Data()
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            if byte != 10 {
+                lineBytes.append(byte)
+                guard lineBytes.count <= 1_000_000 else { throw APIError.invalidResponse }
+                continue
+            }
+            if lineBytes.last == 13 { lineBytes.removeLast() }
+            let line = String(decoding: lineBytes, as: UTF8.self)
+            lineBytes.removeAll(keepingCapacity: true)
+            if line.isEmpty {
+                if !lines.isEmpty {
+                    try await onEvent(event, Data(lines.joined(separator: "\n").utf8))
+                    Self.logger.info("Workout stream event=\(event, privacy: .public) elapsedMs=\(Int(Date().timeIntervalSince(start) * 1000), privacy: .public)")
+                }
+                event = "message"; lines = []
+            } else if line.hasPrefix("event:") { event = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
+            else if line.hasPrefix("data:") { lines.append(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)) }
+        }
+    }
+
     private func makeURL(path: String, queryItems: [URLQueryItem]) -> URL? {
         let pathComponent = path.hasPrefix("/") ? String(path.dropFirst()) : path
         let url = baseURL.appending(path: pathComponent)

@@ -80,7 +80,7 @@ extension TextWorkoutPlan {
         sections = [TextWorkoutSection(title: workout.title, purpose: workout.summary, exercises: workout.exercises.map { exercise in
             var result = TextWorkoutExercise(id: exercise.id, name: exercise.name,
                 prescription: "\(exercise.targetSets) sets × \(exercise.targetReps)",
-                instructions: exercise.instructions, rest: "Rest \(exercise.restSeconds) seconds.", notes: exercise.formCues)
+                instructions: exercise.instructions, rest: "Rest \(exercise.restSeconds) seconds.", notes: [exercise.sessionNote ?? "", exercise.formCues].filter { !$0.isEmpty }.joined(separator: "\n"))
             result.asset = exercise.asset
             return result
         })]

@@ -30,6 +30,21 @@ struct GeneratedWorkout: Codable, Identifiable, Equatable, Hashable {
     var generatedAt: Date = Date()
     var safetyNote: String = "Not medical advice. Stop any movement that causes sharp pain."
     var generationContextSummary: String? = nil
+    var decisionSummary: [WorkoutDecision]? = nil
+    var generationStatus: WorkoutGenerationStatus? = nil
+
+    var isGenerationComplete: Bool { generationStatus == nil || generationStatus == .complete }
+}
+
+enum WorkoutGenerationStatus: String, Codable { case generating, complete, failed }
+
+struct WorkoutDecision: Codable, Equatable, Hashable {
+    var factor: String
+    var adjustment: String
+}
+
+enum SessionIntensity: String, Codable, CaseIterable {
+    case recovery = "Recovery", light = "Light", moderate = "Moderate", hard = "Hard", allOut = "All-out"
 }
 
 // A presentation reference, never the identity of the prescribed movement.
@@ -50,9 +65,12 @@ struct WorkoutExercise: Codable, Identifiable, Equatable, Hashable {
     var instructions: String
     var formCues: String = ""
     var asset: ExerciseAsset? = nil
+    var sessionNote: String? = nil
+    var libraryID: String? = nil
+    var resolutionStatus: String? = nil
 
     var equipmentLabel: String { equipment.isEmpty ? "Bodyweight" : equipment.joined(separator: ", ") }
-    var executionNotes: String { [instructions, formCues].filter { !$0.isEmpty }.joined(separator: "\n\n") }
+    var executionNotes: String { [sessionNote ?? "", instructions, formCues].filter { !$0.isEmpty }.joined(separator: "\n\n") }
 }
 
 extension WorkoutExercise {
@@ -69,7 +87,10 @@ extension WorkoutExercise {
             restSeconds: try container.decode(Int.self, forKey: .restSeconds),
             instructions: try container.decode(String.self, forKey: .instructions),
             formCues: try container.decode(String.self, forKey: .formCues),
-            asset: try? container.decodeIfPresent(ExerciseAsset.self, forKey: .asset)
+            asset: try? container.decodeIfPresent(ExerciseAsset.self, forKey: .asset),
+            sessionNote: try container.decodeIfPresent(String.self, forKey: .sessionNote),
+            libraryID: try container.decodeIfPresent(String.self, forKey: .libraryID),
+            resolutionStatus: try container.decodeIfPresent(String.self, forKey: .resolutionStatus)
         )
     }
 }
@@ -100,6 +121,7 @@ struct WorkoutHistorySummary: Codable, Equatable, Hashable {
     var workoutsThisWeek: Int
     var currentStreakDays: Int
     var recentWorkouts: [RecentWorkoutSummary]
+    var referenceDate: Date? = nil
 
     static let empty = WorkoutHistorySummary(
         totalCompletedWorkouts: 0,
@@ -116,6 +138,25 @@ struct RecentWorkoutSummary: Codable, Identifiable, Equatable, Hashable {
     var durationMinutes: Int?
     var focus: [MuscleGroup]
     var exercises: [String] = []
+    var status: WorkoutCompletionStatus = .completed
+    var notes: String? = nil
+    var exerciseDetails: [HistoricalExercise] = []
+}
+
+struct HistoricalExercise: Codable, Equatable, Hashable {
+    var name: String
+    var muscle: String
+    var prescribedSets: Int
+    var prescribedReps: String
+    var skipped: Bool
+    var loggedSets: [HistoricalSet]
+}
+
+struct HistoricalSet: Codable, Equatable, Hashable {
+    var setNumber: Int
+    var reps: Int
+    var weightKilograms: Double?
+    var perceivedExertion: Int?
 }
 
 struct WorkoutChatMessage: Codable, Equatable, Hashable {
@@ -130,9 +171,16 @@ struct WorkoutGenerationRequest: Codable, Equatable, Hashable {
     var workoutIntent: String = ""
     var todayNotes: String = ""
     var requestedDurationMinutes: Int? = nil
+    var requestedIntensity: SessionIntensity = .moderate
     var historySummary: WorkoutHistorySummary? = nil
     var clientRequestID: UUID = UUID()
     var messages: [WorkoutChatMessage] = []
+    var edit: WorkoutEditRequest? = nil
+}
+
+struct WorkoutEditRequest: Codable, Equatable, Hashable {
+    var workout: GeneratedWorkout
+    var instruction: String
 }
 
 struct WorkoutGenerationResponse: Codable, Equatable, Hashable {

@@ -171,9 +171,10 @@ final class SwiftDataWorkoutHistoryService: WorkoutHistoryService {
             return weekInterval.contains(completedAt)
         }.count
 
-        let recentWorkouts = completed
+        let recentWorkouts = sessions
+            .filter { $0.status == .completed || $0.status == .inProgress }
             .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
-            .prefix(5)
+            .prefix(10)
             .compactMap { session -> RecentWorkoutSummary? in
                 guard let completedAt = session.completedAt else {
                     return nil
@@ -189,7 +190,22 @@ final class SwiftDataWorkoutHistoryService: WorkoutHistoryService {
                     completedAt: completedAt,
                     durationMinutes: duration,
                     focus: session.workout.focus,
-                    exercises: session.workout.exercises.map(\.name)
+                    exercises: session.workout.exercises.map(\.name),
+                    status: session.status,
+                    notes: session.notes,
+                    exerciseDetails: session.workout.exercises.map { exercise in
+                        HistoricalExercise(
+                            name: exercise.name,
+                            muscle: exercise.muscle,
+                            prescribedSets: exercise.targetSets,
+                            prescribedReps: exercise.targetReps,
+                            skipped: session.skippedExerciseIDs.contains(exercise.id),
+                            loggedSets: session.loggedSets
+                                .filter { $0.workoutExerciseID == exercise.id }
+                                .sorted { $0.setNumber < $1.setNumber }
+                                .map { HistoricalSet(setNumber: $0.setNumber, reps: $0.reps, weightKilograms: $0.weightKilograms, perceivedExertion: $0.perceivedExertion) }
+                        )
+                    }
                 )
             }
 
@@ -197,7 +213,8 @@ final class SwiftDataWorkoutHistoryService: WorkoutHistoryService {
             totalCompletedWorkouts: completed.count,
             workoutsThisWeek: workoutsThisWeek,
             currentStreakDays: completedWorkoutStreak(from: completed, referenceDate: referenceDate),
-            recentWorkouts: Array(recentWorkouts)
+            recentWorkouts: Array(recentWorkouts),
+            referenceDate: referenceDate
         )
     }
 

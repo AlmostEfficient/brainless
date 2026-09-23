@@ -6,6 +6,7 @@ struct WorkoutModeView: View {
     var assetURLBuilder: ExerciseAssetURLBuilder = ExerciseAssetURLBuilder()
     var onRegenerate: (String) -> Void = { _ in }
     var isRegenerating: Bool = false
+    var isEditing: Bool = false
     var onSaveCompleted: (WorkoutSession) -> Void = { _ in }
     var onSavePartial: (WorkoutSession) -> Void = { _ in }
     var onDiscard: () -> Void = {}
@@ -39,9 +40,11 @@ struct WorkoutModeView: View {
                                     OverviewPage(
                                         workout: workout,
                                         isRegenerating: isRegenerating,
+                                        canStart: !isEditing,
                                         regenerationGuidance: $regenerationGuidance,
                                         onRegenerate: { onRegenerate(regenerationGuidance) },
                                         onStart: {
+                                            guard !isEditing else { return }
                                             if let firstID = workout.exercises.first?.id {
                                                 withAnimation(.easeInOut(duration: 0.35)) {
                                                     proxy.scrollTo(WorkoutScrollTarget.exercise(firstID), anchor: .top)
@@ -70,6 +73,7 @@ struct WorkoutModeView: View {
                                             onSkip: { skip(exercise, scrollProxy: proxy) },
                                             onFinish: { isFinishSheetPresented = true }
                                         )
+                                        .disabled(isEditing)
                                         .frame(width: geo.size.width, height: pageHeight)
                                         .id(WorkoutScrollTarget.exercise(exercise.id))
                                     }
@@ -108,6 +112,25 @@ struct WorkoutModeView: View {
             restEndsAt = nil
             scrollTarget = .overview
         }
+        .onChange(of: workout.exercises.map(\.id)) { _, ids in
+            let available = Set(ids)
+            loggedSetsByExercise = loggedSetsByExercise.filter { available.contains($0.key) }
+            skippedExerciseIDs.formIntersection(available)
+            if let activeExerciseID, !available.contains(activeExerciseID) {
+                self.activeExerciseID = nil
+                workEndsAt = nil
+                restEndsAt = nil
+            }
+        }
+        .onChange(of: isEditing) { _, editing in
+            if editing {
+                // A pending context change must not keep running the old prescription.
+                activeExerciseID = nil
+                workEndsAt = nil
+                restEndsAt = nil
+                scrollTarget = .overview
+            }
+        }
         .onChange(of: scrollTarget) { _, target in
             handleScrollTargetChange(target)
         }
@@ -117,10 +140,12 @@ struct WorkoutModeView: View {
         }
         .sheet(isPresented: $isFinishSheetPresented) {
             FinishWorkoutSheet(
+                canComplete: workout.isGenerationComplete && !isEditing,
                 loggedSetCount: loggedSetsByExercise.values.reduce(0) { $0 + $1.count },
                 skippedCount: skippedExerciseIDs.count,
                 onSaveCompleted: {
-                    onSaveCompleted(buildSession(status: .completed))
+                    guard !isEditing else { return }
+                    onSaveCompleted(buildSession(status: workout.isGenerationComplete ? .completed : .inProgress))
                     isFinishSheetPresented = false
                 },
                 onSavePartial: {
@@ -210,6 +235,7 @@ struct WorkoutModeView: View {
     }
 
     private func startExerciseTimer(for exerciseID: UUID) {
+        guard !isEditing else { return }
         guard activeExerciseID != exerciseID else { return }
 
         let now = Date()
@@ -256,6 +282,7 @@ struct WorkoutModeView: View {
             completedAt: Date(),
             status: status,
             loggedSets: loggedSetsByExercise.values.flatMap { $0 }.sorted { $0.completedAt < $1.completedAt },
+            skippedExerciseIDs: Array(skippedExerciseIDs),
             notes: skippedExerciseIDs.isEmpty ? nil : "Skipped \(skippedExerciseIDs.count) exercise(s)."
         )
     }
@@ -266,6 +293,7 @@ struct WorkoutModeView: View {
 private struct OverviewPage: View {
     let workout: GeneratedWorkout
     let isRegenerating: Bool
+    let canStart: Bool
     @Binding var regenerationGuidance: String
     let onRegenerate: () -> Void
     let onStart: () -> Void
@@ -488,6 +516,7 @@ private struct OverviewPage: View {
                 .background(BrainlessTheme.accent, in: RoundedRectangle(cornerRadius: 14))
             }
             .buttonStyle(.plain)
+            .disabled(!canStart)
         }
     }
 }
@@ -721,6 +750,7 @@ private struct ExercisePage: View {
 // MARK: - Finish Sheet
 
 private struct FinishWorkoutSheet: View {
+    var canComplete: Bool = true
     let loggedSetCount: Int
     let skippedCount: Int
     let onSaveCompleted: () -> Void
@@ -744,6 +774,7 @@ private struct FinishWorkoutSheet: View {
                             .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
+                    .disabled(!canComplete)
 
                     Button(action: onSavePartial) {
                         Label("Save Partial", systemImage: "tray.and.arrow.down")
