@@ -44,10 +44,22 @@ struct WorkoutStreamingChecks {
         StreamProtocol.payload = Data(partialWire.utf8)
         do { _ = try await service.streamWorkout(for: request) { _ in }; fatalError("Truncated stream accepted") }
         catch WorkoutGenerationError.requestFailed {}
+        var editRequest = request
+        var editWorkout = result
+        editWorkout.exercises[0].durationSeconds = nil
+        editRequest.edit = WorkoutEditRequest(workout: editWorkout, instruction: "Use two sets.")
+        let encodedEdit = try JSONEncoder.brainless.encode(editRequest)
+        let editJSON = try JSONSerialization.jsonObject(with: encodedEdit) as! [String: Any]
+        let edit = editJSON["edit"] as! [String: Any]
+        let encodedWorkout = edit["workout"] as! [String: Any]
+        let encodedExercises = encodedWorkout["exercises"] as! [[String: Any]]
+        precondition(encodedExercises[0]["durationSeconds"] is NSNull)
+        let decodedEdit = try JSONDecoder.brainless.decode(WorkoutGenerationRequest.self, from: encodedEdit)
+        precondition(decodedEdit == editRequest)
         let note = "Keep the load conservative today."
         var exercise = workout.exercises[0]
         exercise.sessionNote = note
         precondition(exercise.executionNotes.hasPrefix(note))
-        print("PASS: real URLSession stream decoding, incremental state, stable IDs, completion, truncation, session guidance")
+        print("PASS: real URLSession stream decoding, incremental state, stable IDs, completion, truncation, session guidance, explicit-null edit encoding")
     }
 }

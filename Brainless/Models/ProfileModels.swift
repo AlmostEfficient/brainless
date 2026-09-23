@@ -74,6 +74,30 @@ struct WorkoutExercise: Codable, Identifiable, Equatable, Hashable {
 }
 
 extension WorkoutExercise {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, muscle, equipment, targetSets, targetReps, durationSeconds, restSeconds
+        case instructions, formCues, asset, sessionNote, libraryID, resolutionStatus
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(muscle, forKey: .muscle)
+        try container.encode(equipment, forKey: .equipment)
+        try container.encode(targetSets, forKey: .targetSets)
+        try container.encode(targetReps, forKey: .targetReps)
+        // The canonical prescription uses explicit null for untimed exercises.
+        try container.encode(durationSeconds, forKey: .durationSeconds)
+        try container.encode(restSeconds, forKey: .restSeconds)
+        try container.encode(instructions, forKey: .instructions)
+        try container.encode(formCues, forKey: .formCues)
+        try container.encodeIfPresent(asset, forKey: .asset)
+        try container.encodeIfPresent(sessionNote, forKey: .sessionNote)
+        try container.encodeIfPresent(libraryID, forKey: .libraryID)
+        try container.encodeIfPresent(resolutionStatus, forKey: .resolutionStatus)
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
